@@ -1,0 +1,26 @@
+-- name: CreateSession :one
+INSERT INTO chat_sessions (customer_id, status)
+VALUES ($1, 'WAITING_USER_REPLY')
+    RETURNING *;
+
+-- name: GetActiveSessionByPhone :one
+SELECT cs.*
+FROM chat_sessions cs
+         JOIN customers c ON cs.customer_id = c.id
+WHERE c.phone_number = $1 AND cs.status != 'RESOLVED'
+LIMIT 1;
+
+-- name: UpdateSessionStatus :exec
+UPDATE chat_sessions
+SET status = $2, last_interaction_at = NOW()
+WHERE id = $1;
+
+-- name: InsertMessage :one
+INSERT INTO message_history (session_id, sender_type, content)
+VALUES ($1, $2, $3)
+    RETURNING *;
+
+-- name: GetSessionMessages :many
+SELECT * FROM message_history
+WHERE session_id = $1
+ORDER BY created_at ASC;
