@@ -17,15 +17,17 @@ import (
 )
 
 type ChatUseCase interface {
+	TriggerPostSale(ctx context.Context, phone string, customerID string) error
+	ProcessIncomingMessage(ctx context.Context, sender types.JID, messageText string) error
 }
 
 type chatUseCase struct {
-	repo     repository.RepositoryInterface
+	repo     repository.ChatRepository
 	client   *whatsmeow.Client
 	aiClient llm.AIClient
 }
 
-func NewChatUseCase(repo repository.RepositoryInterface, waClient *whatsmeow.Client, aiClient llm.AIClient) ChatUseCase {
+func NewChatUseCase(repo repository.ChatRepository, waClient *whatsmeow.Client, aiClient llm.AIClient) ChatUseCase {
 	return &chatUseCase{
 		repo:     repo,
 		client:   waClient,

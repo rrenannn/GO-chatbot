@@ -10,7 +10,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-func NewWhatsappClient() (*whatsmeow.Client, error) {
+func NewWhatsAppClient() (*whatsmeow.Client, error) {
 	ctx := context.Background()
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 

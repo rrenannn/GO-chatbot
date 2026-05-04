@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rrenannn/GO-chatbot/internal/usecase"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
 type WhatsappHandler struct {
-	client *whatsmeow.Client
-	// usecase usecase.ChatUseCase
+	client  *whatsmeow.Client
+	usecase usecase.ChatUseCase
 }
 
 func NewWhatsappHandler(client *whatsmeow.Client) *WhatsappHandler {
@@ -37,7 +39,7 @@ func (h *WhatsappHandler) EventHandler(evt interface{}) {
 
 		if msgText != "" {
 			// Chama a regra de negócio (Onde a mágica do banco + IA acontece)
-			err := h.usecase.ProcessIncomingMessage(context.Background(), v.Info.Sender.User, msgText)
+			err := h.usecase.ProcessIncomingMessage(context.Background(), types.JID{User: v.Info.Sender.User}, msgText)
 			if err != nil {
 				fmt.Println("Erro ao processar mensagem:", err)
 			}

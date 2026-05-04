@@ -8,7 +8,7 @@ import (
 	db "github.com/rrenannn/GO-chatbot/db/sqlc"
 )
 
-type RepositoryInterface interface {
+type ChatRepository interface {
 	GetActiveSessionByPhone(ctx context.Context, phone string) (db.ChatSession, error)
 	CreateSession(ctx context.Context, customerID uuid.UUID) (db.ChatSession, error)
 	UpdateSessionStatus(ctx context.Context, sessionID uuid.UUID, status db.SessionStatus) error
@@ -18,12 +18,13 @@ type RepositoryInterface interface {
 }
 
 type chatRepo struct {
-	conn *sql.DB
-	q    *db.Queries
+	q *db.Queries
 }
 
-func NewRepository(conn *sql.DB, q *db.Queries) RepositoryInterface {
-	return &chatRepo{conn: conn, q: q}
+func NewChatRepository(dbConn *sql.DB) ChatRepository {
+	return &chatRepo{
+		q: db.New(dbConn), // db.New() do sqlc aceita *sql.DB nativamente
+	}
 }
 
 func (r *chatRepo) GetActiveSessionByPhone(ctx context.Context, phone string) (db.ChatSession, error) {

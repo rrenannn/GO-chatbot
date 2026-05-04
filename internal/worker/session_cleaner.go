@@ -8,7 +8,7 @@ import (
 	"github.com/rrenannn/GO-chatbot/internal/repository"
 )
 
-func StartSessionCleaner(repo repository.RepositoryInterface) {
+func StartSessionCleaner(repo repository.ChatRepository) {
 	ticker := time.NewTicker(1 * time.Hour) // Roda a cada 1 hora
 	go func() {
 		for range ticker.C {
