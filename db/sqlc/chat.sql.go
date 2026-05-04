@@ -12,6 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const cleanSessions = `-- name: CleanSessions :exec
+UPDATE chat_sessions SET status = 'RESOLVED'
+WHERE status IN ('WAITING_USER_REPLY', 'AI_HANDLING')
+AND last_interaction_at < NOW() - INTERVAL '24 hours'
+`
+
+func (q *Queries) CleanSessions(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, cleanSessions)
+	return err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO chat_sessions (customer_id, status)
 VALUES ($1, 'WAITING_USER_REPLY')

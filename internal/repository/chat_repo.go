@@ -14,6 +14,7 @@ type RepositoryInterface interface {
 	UpdateSessionStatus(ctx context.Context, sessionID uuid.UUID, status db.SessionStatus) error
 	InsertMessage(ctx context.Context, sessionID uuid.UUID, senderType string, content string) (db.MessageHistory, error)
 	GetSessionMessages(ctx context.Context, sessionID uuid.UUID) ([]db.MessageHistory, error)
+	CleanSessions(ctx context.Context) error
 }
 
 type chatRepo struct {
@@ -50,4 +51,8 @@ func (r *chatRepo) InsertMessage(ctx context.Context, sessionID uuid.UUID, sende
 
 func (r *chatRepo) GetSessionMessages(ctx context.Context, sessionID uuid.UUID) ([]db.MessageHistory, error) {
 	return r.q.GetSessionMessages(ctx, uuid.NullUUID{UUID: sessionID, Valid: true})
+}
+
+func (r *chatRepo) CleanSessions(ctx context.Context) error {
+	return r.q.CleanSessions(ctx)
 }
