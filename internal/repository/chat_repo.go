@@ -9,6 +9,11 @@ import (
 )
 
 type RepositoryInterface interface {
+	GetActiveSessionByPhone(ctx context.Context, phone string) (db.ChatSession, error)
+	CreateSession(ctx context.Context, customerID uuid.UUID) (db.ChatSession, error)
+	UpdateSessionStatus(ctx context.Context, sessionID uuid.UUID, status db.SessionStatus) error
+	InsertMessage(ctx context.Context, sessionID uuid.UUID, senderType string, content string) (db.MessageHistory, error)
+	GetSessionMessages(ctx context.Context, sessionID uuid.UUID) ([]db.MessageHistory, error)
 }
 
 type chatRepo struct {
