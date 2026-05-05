@@ -3,10 +3,11 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/rrenannn/GO-chatbot/internal/usecase"
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -15,15 +16,21 @@ type WhatsappHandler struct {
 	usecase usecase.ChatUseCase
 }
 
-func NewWhatsappHandler(client *whatsmeow.Client) *WhatsappHandler {
-	handler := &WhatsappHandler{client: client}
+func NewWhatsAppHandler(client *whatsmeow.Client, usecase usecase.ChatUseCase) *WhatsappHandler {
+	handler := &WhatsappHandler{client: client, usecase: usecase}
+
 	client.AddEventHandler(handler.EventHandler)
+	fmt.Println("✅ Listener do WhatsApp registrado com sucesso!")
 	return handler
 }
 
 func (h *WhatsappHandler) EventHandler(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
+		if time.Since(v.Info.Timestamp) > 2*time.Minute {
+			fmt.Println("⏳ Ignorando mensagem antiga de:", v.Info.Sender.User)
+			return
+		}
 		// Evita responder a si mesmo ou a mensagens de status
 		if v.Info.IsFromMe || v.Info.IsGroup {
 			return
@@ -37,12 +44,16 @@ func (h *WhatsappHandler) EventHandler(evt interface{}) {
 			msgText = v.Message.ExtendedTextMessage.GetText()
 		}
 
-		if msgText != "" {
-			// Chama a regra de negócio (Onde a mágica do banco + IA acontece)
-			err := h.usecase.ProcessIncomingMessage(context.Background(), types.JID{User: v.Info.Sender.User}, msgText)
-			if err != nil {
-				fmt.Println("Erro ao processar mensagem:", err)
-			}
+		if strings.TrimSpace(msgText) != "" {
+			fmt.Println("📩 MENSAGEM RECEBIDA -> De:", v.Info.Sender.User, "| Texto:", msgText)
+
+			// Chama o caso de uso em uma Goroutine separada para não travar o listener do WhatsApp
+			go func() {
+				err := h.usecase.ProcessIncomingMessage(context.Background(), v.Info.Sender, msgText)
+				if err != nil {
+					fmt.Println("🚨 Erro no UseCase:", err)
+				}
+			}()
 		}
 
 	case *events.Disconnected:

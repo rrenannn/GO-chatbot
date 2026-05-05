@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	_ "modernc.org/sqlite"
 )
 
 func NewWhatsAppClient() (*whatsmeow.Client, error) {
 	ctx := context.Background()
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 
-	container, err := sqlstore.New(ctx, "sqlite3", "file:sessions.db?_foreign_keys=on", dbLog)
+	container, err := sqlstore.New(ctx, "sqlite", "file:sessions.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao conectar no banco do whatsmeow: %w", err)
 	}

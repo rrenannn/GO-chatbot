@@ -15,20 +15,18 @@ type HttpHandler struct {
 	waClient *whatsmeow.Client
 }
 
-func NewEchoHandler(e *echo.Echo, uc usecase.ChatUseCase, waClient *whatsmeow.Client) {
-	handler := &HttpHandler{
+func NewHttpHandler(uc usecase.ChatUseCase, waClient *whatsmeow.Client) *HttpHandler {
+	return &HttpHandler{
 		chatUC:   uc,
 		waClient: waClient,
 	}
+}
 
-	// Suas rotas da API
+func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 	api := e.Group("/api/v1")
 
-	// Rota que o seu sistema de vendas chama para iniciar o pós-venda
-	api.POST("/trigger-post-sale", handler.TriggerPostSale)
-
-	// Rota que o Front-end vai consumir via EventSource para ler o QR Code
-	api.GET("/whatsapp/qr", handler.StreamQRCode)
+	api.POST("/trigger-post-sale", h.TriggerPostSale)
+	api.GET("/whatsapp/qr", h.StreamQRCode)
 }
 
 func (h *HttpHandler) StreamQRCode(c echo.Context) error {
@@ -67,7 +65,27 @@ func (h *HttpHandler) StreamQRCode(c echo.Context) error {
 	return nil
 }
 
+type PostSaleRequest struct {
+	Phone      string `json:"phone"`
+	CustomerID string `json:"customer_id"`
+}
+
 func (h *HttpHandler) TriggerPostSale(c echo.Context) error {
-	// Implementação do gatilho (recebe JSON com phone e customer_id e chama h.chatUC.TriggerPostSale)
+	req := new(PostSaleRequest)
+
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "JSON inválido"})
+	}
+
+	// Como é um teste, se o customer_id vier vazio, criamos um UUID zerado para não quebrar o banco
+	if req.CustomerID == "" {
+		req.CustomerID = "00000000-0000-0000-0000-000000000000"
+	}
+
+	err := h.chatUC.TriggerPostSale(c.Request().Context(), req.Phone, req.CustomerID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"message": "Atendimento iniciado"})
 }

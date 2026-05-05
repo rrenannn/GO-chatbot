@@ -43,7 +43,7 @@ func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, custom
 		return err
 	}
 
-	msgContent := "Olá! Vimos que seu pedido chegou. Está tudo certo com ele ou houve alguma avaria?"
+	msgContent := "Olá 💖\nSeja bem-vindo(a) ao atendimento da Gocase!\nMe chamo Gabi e vou te ajudar da forma mais rápida possível 😊\nComo posso te ajudar hoje? "
 
 	// Salva a mensagem do bot no histórico
 	_, err = uc.repo.InsertMessage(ctx, session.ID, "BOT", msgContent)
@@ -63,12 +63,30 @@ func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, custom
 }
 
 func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.JID, messageText string) error {
-	phone := sender.User
+	rawPhone := sender.User
+
+	// Se for um grupo, ignora
+	//if sender.Server != types.DefaultUserServer {
+	//	return nil
+	//}
+
+	searchPhone := rawPhone
+	if rawPhone == "93583361220718" {
+		searchPhone = "5511945097706"
+	}
+
+	fmt.Println("📩 Mensagem recebida! JID RAW:", rawPhone, "| Texto:", messageText)
+
+	if strings.HasPrefix(rawPhone, "5511") && len(rawPhone) == 12 {
+		// Reconstrói o número colocando o 9 de volta (5511 + 9 + resto do numero)
+		searchPhone = "55119" + rawPhone[4:]
+		fmt.Println("🔄 Número formatado (DDD 11 compensado):", searchPhone)
+	}
 
 	// 1. Busca a sessão ativa
-	session, err := uc.repo.GetActiveSessionByPhone(ctx, phone)
+	session, err := uc.repo.GetActiveSessionByPhone(ctx, searchPhone)
 	if err != nil {
-		// Se não tem sessão ativa, o bot ignora a mensagem (não é pós-venda)
+		fmt.Println("⚠️ Sessão não encontrada para o número:", searchPhone, "Ignorando mensagem.")
 		return nil
 	}
 
@@ -87,23 +105,40 @@ func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.
 	if session.Status.SessionStatus == db.SessionStatusWAITINGUSERREPLY {
 		err = uc.repo.UpdateSessionStatus(ctx, session.ID, db.SessionStatusAIHANDLING)
 		if err != nil {
+			fmt.Println("erro ao salvar msg do usuario:", err)
 			return err
 		}
 	}
 
 	// 5. Busca o histórico para dar contexto à IA
+	fmt.Println("📚 4. Buscando histórico da conversa...")
 	history, err := uc.repo.GetSessionMessages(ctx, session.ID)
 	if err != nil {
+		fmt.Println("🚨 ERRO ao buscar histórico:", err)
 		return err
 	}
 
-	systemPrompt := `Você é o assistente de pós-venda. 
-Sua função é descobrir se o produto chegou bem. 
-Seja amigável e curto.
-REGRAS:
-1. Se o cliente relatar avaria, peça desculpas e diga que vai transferir para um humano. Retorne EXATAMENTE e APENAS a string: [TRANSBORDO_NECESSARIO]
-2. Se o cliente tiver uma dúvida complexa ou estiver irritado, retorne EXATAMENTE: [TRANSBORDO_NECESSARIO]
-3. Se o cliente disser que chegou tudo bem, agradeça e encerre o assunto.`
+	systemPrompt := `Você é a Gabi, assistente virtual de atendimento da Gocase.
+Seja muito amigável, demonstre empatia e use emojis.
+
+FLUXO DE ATENDIMENTO OBRIGATÓRIO (SIGA À RISCA):
+PASSO 1: O cliente relata um problema. Você DEVE pedir o "Número do pedido" e o "E-mail cadastrado". Não aplique a solução ainda.
+PASSO 2: O cliente fornece os dados (Pedido e E-mail). Você DEVE obrigatoriamente ler o histórico da conversa para lembrar qual foi o problema relatado no PASSO 1, e então aplicar a SOLUÇÃO correspondente da lista abaixo. NUNCA pergunte qual é o problema novamente se ele já informou antes!
+
+SOLUÇÕES PARA OS 10 PROBLEMAS (Aplique no PASSO 2):
+1. Pedido atrasado: Diga que o pedido já foi enviado e está em rota, mas houve um pequeno atraso logístico na transportadora. Dê a nova previsão: 08/05.
+2. Pedido marcado como entregue mas não recebido: Peça para ele verificar se vizinhos ou a portaria receberam. Se não acharem, diga que abrirá uma solicitação com a transportadora (prazo de 3 dias úteis).
+3. Endereço errado: Se o pedido ainda não foi enviado, diga que atualizou com sucesso. Se já foi enviado, diga que não é possível alterar diretamente e inicie o transbordo.
+4. Código de rastreio inválido: Diga que o pedido foi enviado recentemente e o código leva algumas horas para atualizar no sistema da transportadora.
+5. Produto sem personalização: Peça desculpas pelo erro na produção. Diga que o time analisará e enviará orientações em 24h úteis.
+6. Capinha no modelo errado: Peça desculpas pela divergência. Diga que o caso foi pra análise prioritária e o time entrará em contato em 24h úteis.
+7. Garrafa riscada: Peça desculpas. Diga que será tratado como avaria e resolvido prioritariamente em 24h úteis.
+8. Cliente perdeu prazo de troca: Diga que o prazo oficial encerrou, mas que você registrará o caso para uma análise especial da equipe.
+9. Problema na recuperação de senha: Diga que você enviou um novo link e peça para ele verificar a caixa de spam/lixo eletrônico.
+10. Troca recusada sem explicação: Peça desculpas pela falta de clareza. Diga que a troca foi recusada com base nas políticas, mas que você solicitará uma reanálise.
+
+REGRA DE TRANSBORDO (HUMANO):
+Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua solução não resolveu (ex: "isso é um absurdo", "precisava pra amanhã", "vou ficar no prejuízo", "ninguém resolve"), você DEVE parar de tentar resolver e retornar EXATAMENTE e APENAS a string: [TRANSBORDO_NECESSARIO].`
 
 	// 6. Envia para a IA (Pseudo-código)
 	// aiResponse := uc.aiClient.AskWithContext(history, systemPrompt)

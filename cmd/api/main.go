@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"os/signal"
@@ -10,70 +9,35 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/rrenannn/GO-chatbot/internal/delivery/http"
-	wpp "github.com/rrenannn/GO-chatbot/internal/delivery/whatsapp"
-	"github.com/rrenannn/GO-chatbot/internal/repository"
-	"github.com/rrenannn/GO-chatbot/internal/usecase"
-	"github.com/rrenannn/GO-chatbot/internal/worker"
-	"github.com/rrenannn/GO-chatbot/pkg/llm"
-	"github.com/rrenannn/GO-chatbot/pkg/whatsapp"
+	"github.com/rrenannn/GO-chatbot/config"
 )
 
 func main() {
-	ctx := context.Background()
+	// 1. Carrega as variáveis de ambiente
+	cfg := config.NewConfig()
 
-	dbUrl := os.Getenv("DATABASE_URL")
+	// 2. Inicializa o Container de Dependências
+	container := config.NewContainerDI(cfg)
+	defer container.Close() // Garante que o banco e o WhatsApp desconectem ao final
 
-	dbConn, err := sql.Open("postgres", dbUrl)
-	if err != nil {
-		log.Fatalf("Falha ao abrir o banco de dados: %v", err)
-	}
-	defer dbConn.Close()
-
-	if err := dbConn.Ping(); err != nil {
-		log.Fatalf("Falha ao conectar fisicamente no banco de dados: %v", err)
-	}
-	log.Println("Conectado ao PostgreSQL com sucesso!")
-
-	dbConn.SetMaxOpenConns(25)
-	dbConn.SetMaxIdleConns(25)
-
-	waClient, err := whatsapp.NewWhatsAppClient()
-	if err != nil {
-		log.Fatalf("Falha ao inicializar Whatsmeow: %v", err)
-	}
-	defer waClient.Disconnect()
-
-	geminiKey := os.Getenv("GEMINI_API_KEY")
-	aiClient, err := llm.NewGeminiClient(ctx, geminiKey)
-	if err != nil {
-		log.Fatalf("Falha ao inicializar Gemini: %v", err)
-	}
-
-	chatRepo := repository.NewChatRepository(dbConn)
-	chatUC := usecase.NewChatUseCase(chatRepo, waClient, aiClient)
-	wpp.NewWhatsappHandler(waClient)
-
-	worker.StartSessionCleaner(chatRepo)
-
+	// 3. Configura e inicializa o Echo
 	e := echo.New()
-	e.Use(middleware.Recover())
 	e.Use(middleware.Logger())
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
-	}))
+	e.Use(middleware.Recover())
+	e.Use(middleware.CORS())
 
-	http.NewEchoHandler(e, chatUC, waClient)
+	// Registra as rotas da API vindas do Container
+	container.HttpHandler.RegisterRoutes(e)
 
-	if waClient.Store.ID != nil {
-		err = waClient.Connect()
-		if err != nil {
+	// 4. Conecta o WhatsApp (Se já tiver sessão salva)
+	if container.WaClient.Store.ID != nil {
+		log.Println("Sessão do WhatsApp encontrada. Conectando...")
+		if err := container.WaClient.Connect(); err != nil {
 			log.Fatalf("Falha ao conectar WhatsApp: %v", err)
 		}
 	}
 
-	port := os.Getenv("PORT")
+	port := cfg.ServerPort
 	if port == "" {
 		port = "8080"
 	}
@@ -91,10 +55,9 @@ func main() {
 
 	log.Println("Desligando o servidor...")
 
-	waClient.Disconnect()
-	if err := e.Shutdown(ctx); err != nil {
+	if err := e.Shutdown(context.Background()); err != nil {
 		e.Logger.Fatal(err)
 	}
 
-	log.Println("Servidor finalizado.")
+	log.Println("Servidor finalizado com sucesso.")
 }
