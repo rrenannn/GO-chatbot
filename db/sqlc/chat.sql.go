@@ -23,6 +23,29 @@ func (q *Queries) CleanSessions(ctx context.Context) error {
 	return err
 }
 
+const createCustomer = `-- name: CreateCustomer :one
+INSERT INTO customers (phone_number, name)
+VALUES ($1, $2)
+    RETURNING id, phone_number, name, created_at
+`
+
+type CreateCustomerParams struct {
+	PhoneNumber string `json:"phone_number"`
+	Name        string `json:"name"`
+}
+
+func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
+	row := q.db.QueryRowContext(ctx, createCustomer, arg.PhoneNumber, arg.Name)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.PhoneNumber,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO chat_sessions (customer_id, status)
 VALUES ($1, 'WAITING_USER_REPLY')
@@ -61,6 +84,22 @@ func (q *Queries) GetActiveSessionByPhone(ctx context.Context, phoneNumber strin
 		&i.StartedAt,
 		&i.LastInteractionAt,
 		&i.AssignedAgent,
+	)
+	return i, err
+}
+
+const getCustomerByPhone = `-- name: GetCustomerByPhone :one
+SELECT id, phone_number, name, created_at FROM customers WHERE phone_number = $1 LIMIT 1
+`
+
+func (q *Queries) GetCustomerByPhone(ctx context.Context, phoneNumber string) (Customer, error) {
+	row := q.db.QueryRowContext(ctx, getCustomerByPhone, phoneNumber)
+	var i Customer
+	err := row.Scan(
+		&i.ID,
+		&i.PhoneNumber,
+		&i.Name,
+		&i.CreatedAt,
 	)
 	return i, err
 }

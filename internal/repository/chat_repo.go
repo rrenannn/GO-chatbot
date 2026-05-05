@@ -15,6 +15,8 @@ type ChatRepository interface {
 	InsertMessage(ctx context.Context, sessionID uuid.UUID, senderType string, content string) (db.MessageHistory, error)
 	GetSessionMessages(ctx context.Context, sessionID uuid.UUID) ([]db.MessageHistory, error)
 	CleanSessions(ctx context.Context) error
+	GetCustomerByPhone(ctx context.Context, phone string) (db.Customer, error)
+	CreateCustomer(ctx context.Context, phone string, name string) (db.Customer, error)
 }
 
 type chatRepo struct {
@@ -56,4 +58,15 @@ func (r *chatRepo) GetSessionMessages(ctx context.Context, sessionID uuid.UUID) 
 
 func (r *chatRepo) CleanSessions(ctx context.Context) error {
 	return r.q.CleanSessions(ctx)
+}
+
+func (r *chatRepo) GetCustomerByPhone(ctx context.Context, phone string) (db.Customer, error) {
+	return r.q.GetCustomerByPhone(ctx, phone)
+}
+
+func (r *chatRepo) CreateCustomer(ctx context.Context, phone string, name string) (db.Customer, error) {
+	return r.q.CreateCustomer(ctx, db.CreateCustomerParams{
+		PhoneNumber: phone,
+		Name:        name,
+	})
 }

@@ -3,10 +3,8 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
-	"github.com/google/uuid"
 	db "github.com/rrenannn/GO-chatbot/db/sqlc"
 	"github.com/rrenannn/GO-chatbot/internal/repository"
 	"github.com/rrenannn/GO-chatbot/pkg/llm"
@@ -36,25 +34,30 @@ func NewChatUseCase(repo repository.ChatRepository, waClient *whatsmeow.Client, 
 }
 
 func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, customerID string) error {
-	// Cria a sessão no banco com status WAITING_USER_REPLY
-	// Nota: Em produção, faça parse correto do customerID para UUID
-	session, err := uc.repo.CreateSession(ctx, parseUUID(customerID))
+	fmt.Println("🚀 Iniciando disparo ativo para:", phone)
+
+	customer, err := uc.repo.GetCustomerByPhone(ctx, phone)
+	if err != nil {
+		fmt.Println("👤 Novo cliente (Ativo)! Cadastrando...")
+		customer, err = uc.repo.CreateCustomer(ctx, phone, "Cliente Pós-Venda")
+		if err != nil {
+			return fmt.Errorf("erro ao criar cliente no disparo: %w", err)
+		}
+	}
+
+	session, err := uc.repo.CreateSession(ctx, customer.ID)
 	if err != nil {
 		return err
 	}
 
 	msgContent := "Olá 💖\nSeja bem-vindo(a) ao atendimento da Gocase!\nMe chamo Gabi e vou te ajudar da forma mais rápida possível 😊\nComo posso te ajudar hoje? "
 
-	// Salva a mensagem do bot no histórico
 	_, err = uc.repo.InsertMessage(ctx, session.ID, "BOT", msgContent)
 	if err != nil {
 		return err
 	}
 
-	// Monta o JID (Identificador do WhatsApp)
 	targetJID := types.NewJID(phone, types.DefaultUserServer)
-
-	// Dispara via Whatsmeow
 	_, err = uc.client.SendMessage(ctx, targetJID, &waProto.Message{
 		Conversation: proto.String(msgContent),
 	})
@@ -65,11 +68,6 @@ func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, custom
 func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.JID, messageText string) error {
 	rawPhone := sender.User
 
-	// Se for um grupo, ignora
-	//if sender.Server != types.DefaultUserServer {
-	//	return nil
-	//}
-
 	searchPhone := rawPhone
 	if rawPhone == "93583361220718" {
 		searchPhone = "5511945097706"
@@ -78,30 +76,40 @@ func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.
 	fmt.Println("📩 Mensagem recebida! JID RAW:", rawPhone, "| Texto:", messageText)
 
 	if strings.HasPrefix(rawPhone, "5511") && len(rawPhone) == 12 {
-		// Reconstrói o número colocando o 9 de volta (5511 + 9 + resto do numero)
 		searchPhone = "55119" + rawPhone[4:]
 		fmt.Println("🔄 Número formatado (DDD 11 compensado):", searchPhone)
 	}
 
-	// 1. Busca a sessão ativa
-	session, err := uc.repo.GetActiveSessionByPhone(ctx, searchPhone)
+	customer, err := uc.repo.GetCustomerByPhone(ctx, searchPhone)
 	if err != nil {
-		fmt.Println("⚠️ Sessão não encontrada para o número:", searchPhone, "Ignorando mensagem.")
-		return nil
+		fmt.Println("👤 Novo cliente detectado! Cadastrando automaticamente...")
+		// Se não achou, cria o cliente com um nome genérico
+		customer, err = uc.repo.CreateCustomer(ctx, searchPhone, "Cliente WhatsApp")
+		if err != nil {
+			return fmt.Errorf("erro ao criar cliente: %w", err)
+		}
 	}
 
-	// 2. Se um humano já assumiu, o bot fica calado
+	session, err := uc.repo.GetActiveSessionByPhone(ctx, searchPhone)
+	if err != nil {
+		fmt.Println("🆕 Nenhuma sessão ativa. Criando nova conversa...")
+		session, err = uc.repo.CreateSession(ctx, customer.ID)
+		if err != nil {
+			return fmt.Errorf("erro ao criar sessao: %w", err)
+		}
+
+		uc.repo.UpdateSessionStatus(ctx, session.ID, db.SessionStatusAIHANDLING)
+	}
+
 	if session.Status.SessionStatus == db.SessionStatusHUMANHANDLING {
 		return nil
 	}
 
-	// 3. Salva a resposta do cliente no banco
 	_, err = uc.repo.InsertMessage(ctx, session.ID, "USER", messageText)
 	if err != nil {
 		return fmt.Errorf("erro ao salvar msg do usuario: %w", err)
 	}
 
-	// 4. Se estava aguardando, muda o status para atendimento com IA
 	if session.Status.SessionStatus == db.SessionStatusWAITINGUSERREPLY {
 		err = uc.repo.UpdateSessionStatus(ctx, session.ID, db.SessionStatusAIHANDLING)
 		if err != nil {
@@ -110,7 +118,6 @@ func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.
 		}
 	}
 
-	// 5. Busca o histórico para dar contexto à IA
 	fmt.Println("📚 4. Buscando histórico da conversa...")
 	history, err := uc.repo.GetSessionMessages(ctx, session.ID)
 	if err != nil {
@@ -140,27 +147,23 @@ SOLUÇÕES PARA OS 10 PROBLEMAS (Aplique no PASSO 2):
 REGRA DE TRANSBORDO (HUMANO):
 Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua solução não resolveu (ex: "isso é um absurdo", "precisava pra amanhã", "vou ficar no prejuízo", "ninguém resolve"), você DEVE parar de tentar resolver e retornar EXATAMENTE e APENAS a string: [TRANSBORDO_NECESSARIO].`
 
-	// 6. Envia para a IA (Pseudo-código)
-	// aiResponse := uc.aiClient.AskWithContext(history, systemPrompt)
 	aiResponse, err := uc.aiClient.AskWithContext(ctx, history, systemPrompt)
 	if err != nil {
-		// Tratar erro (ex: enviar mensagem padrão de "estamos com instabilidade")
 		fmt.Errorf("erro ao encaminhar para o gemini :%w", err)
 		_, errS := uc.client.SendMessage(ctx, sender, &waProto.Message{
 			Conversation: proto.String("Estamos com instabilidade, aguarde um momento e tente novamente."),
 		})
 		if errS != nil {
-			fmt.Errorf("erro ao enviar mensagem: %v", err)
+			fmt.Printf("erro ao enviar mensagem: %v", err)
 		}
 		return err
 	}
 
-	// 7. Avalia a resposta da IA (Regra de Transbordo)
 	if strings.Contains(aiResponse, "[TRANSBORDO_NECESSARIO]") {
 		// Pausa o bot
 		err := uc.repo.UpdateSessionStatus(ctx, session.ID, db.SessionStatusHUMANHANDLING)
 		if err != nil {
-			fmt.Errorf("erro ao atualizar status da sessao: %w", err)
+			fmt.Printf("erro ao atualizar status da sessao: %s", err)
 		}
 
 		handoffMsg := "Vou transferir você para um de nossos especialistas. Só um instante!"
@@ -170,11 +173,9 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 			Conversation: proto.String(handoffMsg),
 		})
 
-		// Aqui você chamaria um serviço de notificação (WebSocket para seu front, Slack, etc.)
 		return nil
 	}
 
-	// 8. Se a IA resolveu continuar a conversa, envia a resposta dela
 	_, errI := uc.repo.InsertMessage(ctx, session.ID, "BOT", aiResponse)
 	if errI != nil {
 		fmt.Printf("erro ao salvar mensagem no banco: %v", err)
@@ -184,17 +185,8 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 		Conversation: proto.String(aiResponse),
 	})
 	if errS != nil {
-		fmt.Errorf("erro ao enviar mensagem: %v", err)
+		fmt.Println("🚨 Erro ao encaminhar para o gemini:", err)
 	}
 
 	return err
-}
-
-// Função auxiliar para parse de UUID (omitida para brevidade)
-func parseUUID(id string) uuid.UUID {
-	parsed, err := uuid.Parse(id)
-	if err != nil {
-		log.Fatalf("UUID inválido: %v", err)
-	}
-	return parsed
 }
