@@ -13,23 +13,18 @@ import (
 )
 
 func main() {
-	// 1. Carrega as variáveis de ambiente
 	cfg := config.NewConfig()
 
-	// 2. Inicializa o Container de Dependências
 	container := config.NewContainerDI(cfg)
-	defer container.Close() // Garante que o banco e o WhatsApp desconectem ao final
+	defer container.Close()
 
-	// 3. Configura e inicializa o Echo
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	// Registra as rotas da API vindas do Container
 	container.HttpHandler.RegisterRoutes(e)
 
-	// 4. Conecta o WhatsApp (Se já tiver sessão salva)
 	if container.WaClient.Store.ID != nil {
 		log.Println("Sessão do WhatsApp encontrada. Conectando...")
 		if err := container.WaClient.Connect(); err != nil {
