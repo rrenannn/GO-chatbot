@@ -24,7 +24,7 @@ func NewWhatsAppClient() (*whatsmeow.Client, error) {
 		panic(err)
 	}
 
-	clientLog := waLog.Stdout("Client", "INFO", true)
+	clientLog := waLog.Stdout("Client", "DEBUG", true)
 	client := whatsmeow.NewClient(deviceStore, clientLog)
 
 	client.EnableAutoReconnect = true

@@ -41,65 +41,58 @@ func (h *HttpHandler) StreamQRCode(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
 	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
 
-	// Já conectado → retorna direto
+	// 1. Já está autenticado no banco? Retorna conectado.
 	if h.waClient.Store.ID != nil {
 		fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
 		c.Response().Flush()
 		return nil
 	}
 
-	// 🔒 Protege contra múltiplos Connect()
-	mu.Lock()
-	if !isConnecting {
-		isConnecting = true
-
-		go func() {
-			err := h.waClient.Connect()
-			if err != nil {
-				fmt.Println("Erro ao conectar WhatsApp:", err)
-			}
-		}()
-	}
-	mu.Unlock()
-
-	// Canal do QR
+	// 2. REGRA DE OURO: Pegar o canal SEMPRE antes de conectar
 	qrChan, _ := h.waClient.GetQRChannel(context.Background())
 
-	// Loop SSE
-	for evt := range qrChan {
-		switch evt.Event {
-
-		case "code":
-			fmt.Fprintf(c.Response(),
-				"data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n",
-				evt.Code,
-			)
-			c.Response().Flush()
-
-		case "success":
-			fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
-			c.Response().Flush()
-
-			// libera para próximas conexões futuras
-			mu.Lock()
-			isConnecting = false
-			mu.Unlock()
-
-			return nil
-
-		case "timeout", "error":
+	// 3. Conecta apenas se o WebSocket estiver fechado
+	// O Whatsmeow já lida internamente com o controle de concorrência
+	if !h.waClient.IsConnected() {
+		err := h.waClient.Connect()
+		if err != nil {
+			fmt.Println("🚨 Erro ao conectar WhatsApp:", err)
 			fmt.Fprintf(c.Response(), "data: {\"status\": \"ERROR\"}\n\n")
 			c.Response().Flush()
-
-			mu.Lock()
-			isConnecting = false
-			mu.Unlock()
-
 			return nil
 		}
 	}
 
-	return nil
+	// 4. Loop SSE com Select (Lida com fechamento de aba do navegador)
+	for {
+		select {
+		case evt := <-qrChan:
+			switch evt.Event {
+			case "code":
+				// Envia o código para o front-end renderizar
+				fmt.Fprintf(c.Response(), "data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n", evt.Code)
+				c.Response().Flush()
+
+			case "success":
+				// Pareamento concluído com sucesso
+				fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
+				c.Response().Flush()
+				return nil
+
+			case "timeout", "error":
+				// O QR Code expirou ou houve erro na rede
+				fmt.Fprintf(c.Response(), "data: {\"status\": \"ERROR\"}\n\n")
+				c.Response().Flush()
+				return nil
+			}
+
+		case <-c.Request().Context().Done():
+			// O cliente atualizou a página ou fechou a aba do navegador
+			// Interrompemos o loop para não gastar memória do EC2
+			fmt.Println("⚠️ Conexão SSE encerrada pelo navegador.")
+			return nil
+		}
+	}
 }
 
 type PostSaleRequest struct {
