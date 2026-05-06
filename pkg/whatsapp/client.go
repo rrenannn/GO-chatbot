@@ -14,7 +14,7 @@ func NewWhatsAppClient() (*whatsmeow.Client, error) {
 	ctx := context.Background()
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 
-	container, err := sqlstore.New(ctx, "sqlite", "file:sessions.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbLog)
+	container, err := sqlstore.New(ctx, "sqlite", "file:/app/data/sessions.db?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao conectar no banco do whatsmeow: %w", err)
 	}
