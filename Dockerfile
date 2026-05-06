@@ -1,6 +1,6 @@
 # --- Estágio 1: Builder ---
 # Usamos a imagem oficial do Go para compilar o binário
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Instala git (necessário para baixar algumas dependências do Go)
 RUN apk add --no-cache git
