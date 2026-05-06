@@ -34,7 +34,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - sessions_data:/app
+      - sessions_data:/app/data
 
 volumes:
   postgres_data:
