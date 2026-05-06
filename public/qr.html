@@ -40,7 +40,11 @@
     let qrcode = null;
 
     // 1. Abre a conexão SSE com o seu backend em Go
-    const evtSource = new EventSource("http://54.157.25.139:8080/api/v1/whatsapp/qr");
+    if (window.evtSource) {
+        window.evtSource.close();
+    }
+
+    window.evtSource = new EventSource("/api/v1/whatsapp/qr");
 
     // 2. Fica escutando os eventos
     evtSource.onmessage = function(event) {
