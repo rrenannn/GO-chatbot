@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rrenannn/GO-chatbot/internal/usecase"
@@ -29,36 +30,72 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 	api.GET("/whatsapp/qr", h.StreamQRCode)
 }
 
+var (
+	isConnecting bool
+	mu           sync.Mutex
+)
+
 func (h *HttpHandler) StreamQRCode(c echo.Context) error {
-	// Configura os headers para SSE
+	// Headers SSE
 	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
 	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
 
-	// Se já estiver logado, avisa o front e encerra
+	// Já conectado → retorna direto
 	if h.waClient.Store.ID != nil {
 		fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
 		c.Response().Flush()
 		return nil
 	}
 
-	// Pega o canal de eventos do QR Code
-	qrChan, _ := h.waClient.GetQRChannel(context.Background())
-	err := h.waClient.Connect()
-	if err != nil {
-		return err
-	}
+	// 🔒 Protege contra múltiplos Connect()
+	mu.Lock()
+	if !isConnecting {
+		isConnecting = true
 
-	// Fica escutando o canal e enviando para o front
+		go func() {
+			err := h.waClient.Connect()
+			if err != nil {
+				fmt.Println("Erro ao conectar WhatsApp:", err)
+			}
+		}()
+	}
+	mu.Unlock()
+
+	// Canal do QR
+	qrChan, _ := h.waClient.GetQRChannel(context.Background())
+
+	// Loop SSE
 	for evt := range qrChan {
-		if evt.Event == "code" {
-			// Envia o código em formato JSON
-			fmt.Fprintf(c.Response(), "data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n", evt.Code)
+		switch evt.Event {
+
+		case "code":
+			fmt.Fprintf(c.Response(),
+				"data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n",
+				evt.Code,
+			)
 			c.Response().Flush()
-		} else if evt.Event == "success" {
+
+		case "success":
 			fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
 			c.Response().Flush()
-			break
+
+			// libera para próximas conexões futuras
+			mu.Lock()
+			isConnecting = false
+			mu.Unlock()
+
+			return nil
+
+		case "timeout", "error":
+			fmt.Fprintf(c.Response(), "data: {\"status\": \"ERROR\"}\n\n")
+			c.Response().Flush()
+
+			mu.Lock()
+			isConnecting = false
+			mu.Unlock()
+
+			return nil
 		}
 	}
 
