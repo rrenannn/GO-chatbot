@@ -16,6 +16,8 @@ FROM alpine:3.19
 
 WORKDIR /app
 COPY --from=builder /app/app .
+COPY --from=builder /app/db/migration ./db/migration
+COPY --from=builder /app/public ./public
 
 EXPOSE 8080
 
