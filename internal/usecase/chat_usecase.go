@@ -150,7 +150,7 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 	aiResponse, err := uc.aiClient.AskWithContext(ctx, history, systemPrompt)
 	if err != nil {
 		fmt.Println("🚨 ERRO NA IA:", err)
-		_, errS := uc.client.SendMessage(ctx, sender, &waProto.Message{
+		_, errS := uc.client.SendMessage(ctx, sender.ToNonAD(), &waProto.Message{
 			Conversation: proto.String("Estamos com instabilidade, aguarde um momento e tente novamente."),
 		})
 		if errS != nil {
@@ -169,7 +169,7 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 		handoffMsg := "Vou transferir você para um de nossos especialistas. Só um instante!"
 
 		uc.repo.InsertMessage(ctx, session.ID, "BOT", handoffMsg)
-		uc.client.SendMessage(ctx, sender, &waProto.Message{
+		uc.client.SendMessage(ctx, sender.ToNonAD(), &waProto.Message{
 			Conversation: proto.String(handoffMsg),
 		})
 
@@ -181,7 +181,7 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 		fmt.Printf("erro ao salvar mensagem no banco: %v", err)
 	}
 
-	_, errS := uc.client.SendMessage(ctx, sender, &waProto.Message{
+	_, errS := uc.client.SendMessage(ctx, sender.ToNonAD(), &waProto.Message{
 		Conversation: proto.String(aiResponse),
 	})
 	if errS != nil {
