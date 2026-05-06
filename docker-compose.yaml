@@ -34,10 +34,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      # Garante que as sessões do WhatsApp persistam entre restarts
-      - ./sessions.db:/app/sessions.db
-      - ./sessions.db-wal:/app/sessions.db-wal
-      - ./sessions.db-shm:/app/sessions.db-shm
+      - sessions_data:/app
 
 volumes:
   postgres_data:
