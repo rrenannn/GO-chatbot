@@ -21,11 +21,8 @@ type Config struct {
 }
 
 func NewConfig() Config {
-	if os.Getenv("ENVIRONMENT") == "" {
-		if err := godotenv.Load(".env"); err != nil {
-			panic("Error loading env file")
-		}
-	}
+	_ = godotenv.Load(".env")
+
 	return Config{
 		ServerName:   os.Getenv("SERVER_NAME"),
 		ServerPort:   os.Getenv("SERVER_PORT"),
