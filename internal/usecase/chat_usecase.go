@@ -149,7 +149,7 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 
 	aiResponse, err := uc.aiClient.AskWithContext(ctx, history, systemPrompt)
 	if err != nil {
-		fmt.Errorf("erro ao encaminhar para o gemini :%w", err)
+		fmt.Println("🚨 ERRO NA IA:", err)
 		_, errS := uc.client.SendMessage(ctx, sender, &waProto.Message{
 			Conversation: proto.String("Estamos com instabilidade, aguarde um momento e tente novamente."),
 		})
@@ -185,7 +185,7 @@ Se o cliente ficar muito irritado, usar palavrões, ou disser que a sua soluçã
 		Conversation: proto.String(aiResponse),
 	})
 	if errS != nil {
-		fmt.Println("🚨 Erro ao encaminhar para o gemini:", err)
+		fmt.Println("🚨 Erro ao encaminhar para o gemini:", errS)
 	}
 
 	return err

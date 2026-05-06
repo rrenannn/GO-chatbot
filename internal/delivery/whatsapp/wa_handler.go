@@ -27,10 +27,16 @@ func NewWhatsAppHandler(client *whatsmeow.Client, usecase usecase.ChatUseCase) *
 func (h *WhatsappHandler) EventHandler(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
+
+		if v.Message == nil {
+			return
+		}
+
 		if time.Since(v.Info.Timestamp) > 2*time.Minute {
 			fmt.Println("⏳ Ignorando mensagem antiga de:", v.Info.Sender.User)
 			return
 		}
+
 		// Evita responder a si mesmo ou a mensagens de status
 		if v.Info.IsFromMe || v.Info.IsGroup {
 			return
