@@ -23,6 +23,10 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
+	e.GET("/qr-code", func(c echo.Context) error {
+		return c.File("./public/qr.html")
+	})
+
 	container.HttpHandler.RegisterRoutes(e)
 
 	if container.WaClient.Store.ID != nil {
