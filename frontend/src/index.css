@@ -1,0 +1,64 @@
+:root {
+  --bg-1: #0f1420;
+  --bg-2: #161d2e;
+  --accent: #25d366;
+  --accent-dark: #1ebd5a;
+  --text: #e8ecf3;
+  --text-dim: #8892a6;
+  --danger: #ef4444;
+  --warning: #f5a623;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(255, 255, 255, 0.04);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --overlay-bg: rgba(5, 8, 14, 0.6);
+  --qr-frame-bg: #ffffff;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg-1: #f4f6fb;
+  --bg-2: #e9edf6;
+  --accent: #1fa855;
+  --accent-dark: #17913f;
+  --text: #16181f;
+  --text-dim: #5a6270;
+  --danger: #d92d20;
+  --warning: #b7791f;
+  --card-border: rgba(15, 20, 32, 0.1);
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --input-bg: rgba(15, 20, 32, 0.04);
+  --overlay-bg: rgba(15, 20, 32, 0.25);
+  --qr-frame-bg: #ffffff;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: radial-gradient(circle at 20% 15%, rgba(37, 211, 102, 0.12), transparent 40%),
+    radial-gradient(circle at 80% 85%, rgba(37, 211, 102, 0.08), transparent 45%),
+    linear-gradient(160deg, var(--bg-1), var(--bg-2));
+  color: var(--text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+#root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+button {
+  font-family: inherit;
+}

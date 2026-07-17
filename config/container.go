@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"database/sql"
 	"log"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/rrenannn/GO-chatbot/internal/usecase"
 	"github.com/rrenannn/GO-chatbot/internal/worker"
 	"github.com/rrenannn/GO-chatbot/pkg/database"
-	"github.com/rrenannn/GO-chatbot/pkg/llm"
 	"github.com/rrenannn/GO-chatbot/pkg/whatsapp"
 	"go.mau.fi/whatsmeow"
 )
@@ -20,7 +18,6 @@ type ContainerDI struct {
 	Config   Config
 	Conn     *sql.DB
 	WaClient *whatsmeow.Client
-	AIClient llm.AIClient
 
 	// Domínio de Chat
 	ChatRepo    repository.ChatRepository
@@ -59,19 +56,11 @@ func (c *ContainerDI) db() {
 }
 
 func (c *ContainerDI) buildClients() {
-	// 1. Constrói cliente Whatsmeow
 	waClient, err := whatsapp.NewWhatsAppClient()
 	if err != nil {
 		panic("Erro ao inicializar Whatsmeow: " + err.Error())
 	}
 	c.WaClient = waClient
-
-	// 2. Constrói cliente Gemini
-	aiClient, err := llm.NewGeminiClient(context.Background(), c.Config.GeminiAPIKey)
-	if err != nil {
-		panic("Erro ao inicializar Gemini: " + err.Error())
-	}
-	c.AIClient = aiClient
 }
 
 func (c *ContainerDI) buildRepositories() {
@@ -79,7 +68,7 @@ func (c *ContainerDI) buildRepositories() {
 }
 
 func (c *ContainerDI) buildUseCases() {
-	c.ChatUC = usecase.NewChatUseCase(c.ChatRepo, c.WaClient, c.AIClient)
+	c.ChatUC = usecase.NewChatUseCase(c.ChatRepo, c.WaClient)
 }
 
 func (c *ContainerDI) buildHandlers() {

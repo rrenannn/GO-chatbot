@@ -23,11 +23,9 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
 
-	e.GET("/qr-code", func(c echo.Context) error {
-		return c.File("./public/qr.html")
-	})
-
 	container.HttpHandler.RegisterRoutes(e)
+
+	e.Static("/", "./frontend/dist")
 
 	if container.WaClient.Store.ID != nil {
 		log.Println("Sessão do WhatsApp encontrada. Conectando...")

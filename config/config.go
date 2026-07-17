@@ -17,7 +17,6 @@ type Config struct {
 	DBDatabase   string
 	DBSSLMode    string
 	DBDriver     string
-	GeminiAPIKey string
 }
 
 func NewConfig() Config {
@@ -34,6 +33,5 @@ func NewConfig() Config {
 		DBDatabase:   os.Getenv("POSTGRES_DB"),
 		DBSSLMode:    os.Getenv("DB_SSL_MODE"),
 		DBDriver:     os.Getenv("DB_DRIVER"),
-		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 	}
 }

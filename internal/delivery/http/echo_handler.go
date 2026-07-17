@@ -2,8 +2,11 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/labstack/echo/v4"
@@ -28,6 +31,7 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 
 	api.POST("/trigger-post-sale", h.TriggerPostSale)
 	api.GET("/whatsapp/qr", h.StreamQRCode)
+	api.POST("/broadcast", h.Broadcast)
 }
 
 var (
@@ -118,4 +122,80 @@ func (h *HttpHandler) TriggerPostSale(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Atendimento iniciado"})
+}
+
+type BroadcastContactRequest struct {
+	Phone string `json:"phone"`
+	Name  string `json:"name"`
+}
+
+type BroadcastRequest struct {
+	Contacts []BroadcastContactRequest `json:"contacts"`
+	Message  string                    `json:"message"`
+}
+
+var phoneDigitsRe = regexp.MustCompile(`\D`)
+
+// Broadcast envia a mensagem (com suporte à variável {{nome}}) para vários
+// contatos via SSE, reportando o progresso de cada envio em tempo real
+// (com delay aleatório entre eles).
+func (h *HttpHandler) Broadcast(c echo.Context) error {
+	req := new(BroadcastRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "JSON inválido"})
+	}
+
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Mensagem vazia"})
+	}
+
+	contacts := make([]usecase.BroadcastContact, 0, len(req.Contacts))
+	seen := map[string]bool{}
+	for _, raw := range req.Contacts {
+		p := phoneDigitsRe.ReplaceAllString(raw.Phone, "")
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		contacts = append(contacts, usecase.BroadcastContact{Phone: p, Name: strings.TrimSpace(raw.Name)})
+	}
+
+	if len(contacts) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Nenhum número válido informado"})
+	}
+	if len(contacts) > usecase.MaxBroadcastRecipients {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("Máximo de %d destinatários por disparo", usecase.MaxBroadcastRecipients),
+		})
+	}
+
+	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
+
+	sendEvent := func(payload map[string]interface{}) {
+		b, _ := json.Marshal(payload)
+		fmt.Fprintf(c.Response(), "data: %s\n\n", b)
+		c.Response().Flush()
+	}
+
+	err := h.chatUC.BroadcastMessage(c.Request().Context(), contacts, message, func(result usecase.BroadcastResult, sent, total int) {
+		sendEvent(map[string]interface{}{
+			"status":  "PROGRESS",
+			"phone":   result.Phone,
+			"success": result.Success,
+			"error":   result.Error,
+			"sent":    sent,
+			"total":   total,
+		})
+	})
+
+	if err != nil {
+		sendEvent(map[string]interface{}{"status": "ERROR", "error": err.Error()})
+		return nil
+	}
+
+	sendEvent(map[string]interface{}{"status": "DONE"})
+	return nil
 }
