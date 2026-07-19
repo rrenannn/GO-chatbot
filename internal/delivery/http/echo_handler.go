@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/rrenannn/GO-chatbot/internal/usecase"
@@ -34,10 +35,72 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 	api.POST("/broadcast", h.Broadcast)
 }
 
+// qrSharedState guarda o último status de pareamento conhecido. O whatsmeow só
+// permite obter o canal de QR code uma única vez por processo, então em vez de
+// chamar GetQRChannel a cada conexão SSE (o que trava conexões subsequentes num
+// canal nil), um único goroutine observa o canal e todas as requisições SSE
+// leem esse estado compartilhado.
+type qrSharedState struct {
+	mu      sync.Mutex
+	status  string // "" (aguardando) | "QR_CODE" | "CONNECTED" | "ERROR"
+	code    string
+	version int
+}
+
 var (
-	isConnecting bool
-	mu           sync.Mutex
+	qrShared     = &qrSharedState{}
+	qrWatcherOne sync.Once
 )
+
+func (s *qrSharedState) set(status, code string) {
+	s.mu.Lock()
+	s.status = status
+	s.code = code
+	s.version++
+	s.mu.Unlock()
+}
+
+func (s *qrSharedState) snapshot() (status, code string, version int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status, s.code, s.version
+}
+
+// ensureQRWatcher inicia (uma única vez por processo) o goroutine que possui o
+// canal de QR code do whatsmeow e conecta o cliente.
+func (h *HttpHandler) ensureQRWatcher() {
+	qrWatcherOne.Do(func() {
+		qrChan, err := h.waClient.GetQRChannel(context.Background())
+		if err != nil {
+			fmt.Println("🚨 Erro ao obter canal de QR code:", err)
+			qrShared.set("ERROR", "")
+			return
+		}
+
+		if !h.waClient.IsConnected() {
+			if err := h.waClient.Connect(); err != nil {
+				fmt.Println("🚨 Erro ao conectar WhatsApp:", err)
+				qrShared.set("ERROR", "")
+				return
+			}
+		}
+
+		go func() {
+			for evt := range qrChan {
+				switch evt.Event {
+				case "code":
+					qrShared.set("QR_CODE", evt.Code)
+				case "success":
+					qrShared.set("CONNECTED", "")
+					return
+				case "timeout", "error":
+					qrShared.set("ERROR", "")
+					return
+				}
+			}
+		}()
+	})
+}
 
 func (h *HttpHandler) StreamQRCode(c echo.Context) error {
 	// Headers SSE
@@ -52,39 +115,32 @@ func (h *HttpHandler) StreamQRCode(c echo.Context) error {
 		return nil
 	}
 
-	// 2. REGRA DE OURO: Pegar o canal SEMPRE antes de conectar
-	qrChan, _ := h.waClient.GetQRChannel(context.Background())
+	h.ensureQRWatcher()
 
-	// 3. Conecta apenas se o WebSocket estiver fechado
-	// O Whatsmeow já lida internamente com o controle de concorrência
-	if !h.waClient.IsConnected() {
-		err := h.waClient.Connect()
-		if err != nil {
-			fmt.Println("🚨 Erro ao conectar WhatsApp:", err)
-			fmt.Fprintf(c.Response(), "data: {\"status\": \"ERROR\"}\n\n")
-			c.Response().Flush()
-			return nil
-		}
-	}
+	// 2. Faz polling do estado compartilhado e envia só quando ele muda,
+	// permitindo múltiplas abas/reconexões sem recriar o canal do whatsmeow.
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
 
-	// 4. Loop SSE com Select (Lida com fechamento de aba do navegador)
+	lastVersion := -1
 	for {
 		select {
-		case evt := <-qrChan:
-			switch evt.Event {
-			case "code":
-				// Envia o código para o front-end renderizar
-				fmt.Fprintf(c.Response(), "data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n", evt.Code)
-				c.Response().Flush()
+		case <-ticker.C:
+			status, code, version := qrShared.snapshot()
+			if version == lastVersion {
+				continue
+			}
+			lastVersion = version
 
-			case "success":
-				// Pareamento concluído com sucesso
+			switch status {
+			case "QR_CODE":
+				fmt.Fprintf(c.Response(), "data: {\"status\": \"QR_CODE\", \"code\": \"%s\"}\n\n", code)
+				c.Response().Flush()
+			case "CONNECTED":
 				fmt.Fprintf(c.Response(), "data: {\"status\": \"CONNECTED\"}\n\n")
 				c.Response().Flush()
 				return nil
-
-			case "timeout", "error":
-				// O QR Code expirou ou houve erro na rede
+			case "ERROR":
 				fmt.Fprintf(c.Response(), "data: {\"status\": \"ERROR\"}\n\n")
 				c.Response().Flush()
 				return nil
@@ -92,7 +148,6 @@ func (h *HttpHandler) StreamQRCode(c echo.Context) error {
 
 		case <-c.Request().Context().Done():
 			// O cliente atualizou a página ou fechou a aba do navegador
-			// Interrompemos o loop para não gastar memória do EC2
 			fmt.Println("⚠️ Conexão SSE encerrada pelo navegador.")
 			return nil
 		}

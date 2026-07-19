@@ -21,7 +21,14 @@ func main() {
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
+
+	allowOrigins := []string{"*"}
+	if cfg.FrontendURL != "" {
+		allowOrigins = []string{cfg.FrontendURL}
+	}
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: allowOrigins,
+	}))
 
 	container.HttpHandler.RegisterRoutes(e)
 

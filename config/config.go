@@ -17,6 +17,7 @@ type Config struct {
 	DBDatabase   string
 	DBSSLMode    string
 	DBDriver     string
+	FrontendURL  string
 }
 
 func NewConfig() Config {
@@ -33,5 +34,6 @@ func NewConfig() Config {
 		DBDatabase:   os.Getenv("POSTGRES_DB"),
 		DBSSLMode:    os.Getenv("DB_SSL_MODE"),
 		DBDriver:     os.Getenv("DB_DRIVER"),
+		FrontendURL:  os.Getenv("FRONTEND_URL"),
 	}
 }

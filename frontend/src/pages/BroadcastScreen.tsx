@@ -4,6 +4,7 @@ import StepIndicator from '../components/StepIndicator'
 import ConfirmModal from '../components/ConfirmModal'
 import ThemeToggle from '../components/ThemeToggle'
 import { useToast } from '../components/ToastProvider'
+import { apiUrl } from '../lib/api'
 import '../App.css'
 
 const MAX_RECIPIENTS = 200
@@ -122,7 +123,7 @@ export default function BroadcastScreen() {
     setProgress({ sent: 0, total: contacts.length })
 
     try {
-      const response = await fetch('/api/v1/broadcast', {
+      const response = await fetch(apiUrl('/api/v1/broadcast'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts, message }),
