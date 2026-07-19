@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	db "github.com/rrenannn/GO-chatbot/db/sqlc"
 	"github.com/rrenannn/GO-chatbot/internal/repository"
 	"go.mau.fi/whatsmeow"
@@ -33,10 +34,20 @@ type BroadcastResult struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// Todos os métodos recebem o client whatsmeow e o dono (ownerID) da sessão,
+// já que cada usuário logado tem sua própria conexão isolada com o WhatsApp.
 type ChatUseCase interface {
-	TriggerPostSale(ctx context.Context, phone string, customerID string) error
-	ProcessIncomingMessage(ctx context.Context, sender types.JID, messageText string) error
-	BroadcastMessage(ctx context.Context, contacts []BroadcastContact, messageTemplate string, onProgress func(BroadcastResult, int, int)) error
+	TriggerPostSale(ctx context.Context, client *whatsmeow.Client, ownerID uuid.UUID, phone string) error
+	ProcessIncomingMessage(ctx context.Context, client *whatsmeow.Client, ownerID uuid.UUID, sender types.JID, messageText string) error
+	BroadcastMessage(ctx context.Context, client *whatsmeow.Client, contacts []BroadcastContact, messageTemplate string, onProgress func(BroadcastResult, int, int)) error
+}
+
+type chatUseCase struct {
+	repo repository.ChatRepository
+}
+
+func NewChatUseCase(repo repository.ChatRepository) ChatUseCase {
+	return &chatUseCase{repo: repo}
 }
 
 // renderMessage substitui a variável {{nome}} pelo nome do contato (ou remove
@@ -48,25 +59,13 @@ func renderMessage(template string, name string) string {
 	return strings.ReplaceAll(template, "{{nome}}", name)
 }
 
-type chatUseCase struct {
-	repo   repository.ChatRepository
-	client *whatsmeow.Client
-}
-
-func NewChatUseCase(repo repository.ChatRepository, waClient *whatsmeow.Client) ChatUseCase {
-	return &chatUseCase{
-		repo:   repo,
-		client: waClient,
-	}
-}
-
-func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, customerID string) error {
+func (uc *chatUseCase) TriggerPostSale(ctx context.Context, client *whatsmeow.Client, ownerID uuid.UUID, phone string) error {
 	fmt.Println("🚀 Iniciando disparo ativo para:", phone)
 
-	customer, err := uc.repo.GetCustomerByPhone(ctx, phone)
+	customer, err := uc.repo.GetCustomerByPhone(ctx, ownerID, phone)
 	if err != nil {
 		fmt.Println("👤 Novo cliente (Ativo)! Cadastrando...")
-		customer, err = uc.repo.CreateCustomer(ctx, phone, "Cliente Pós-Venda")
+		customer, err = uc.repo.CreateCustomer(ctx, ownerID, phone, "Cliente Pós-Venda")
 		if err != nil {
 			return fmt.Errorf("erro ao criar cliente no disparo: %w", err)
 		}
@@ -85,20 +84,16 @@ func (uc *chatUseCase) TriggerPostSale(ctx context.Context, phone string, custom
 	}
 
 	targetJID := types.NewJID(phone, types.DefaultUserServer)
-	_, err = uc.client.SendMessage(ctx, targetJID, &waProto.Message{
+	_, err = client.SendMessage(ctx, targetJID, &waProto.Message{
 		Conversation: proto.String(msgContent),
 	})
 
 	return err
 }
 
-func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.JID, messageText string) error {
+func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, client *whatsmeow.Client, ownerID uuid.UUID, sender types.JID, messageText string) error {
 	rawPhone := sender.User
-
 	searchPhone := rawPhone
-	if rawPhone == "93583361220718" {
-		searchPhone = "5511945097706"
-	}
 
 	fmt.Println("📩 Mensagem recebida! JID RAW:", rawPhone, "| Texto:", messageText)
 
@@ -107,16 +102,16 @@ func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.
 		fmt.Println("🔄 Número formatado (DDD 11 compensado):", searchPhone)
 	}
 
-	customer, err := uc.repo.GetCustomerByPhone(ctx, searchPhone)
+	customer, err := uc.repo.GetCustomerByPhone(ctx, ownerID, searchPhone)
 	if err != nil {
 		fmt.Println("👤 Novo cliente detectado! Cadastrando automaticamente...")
-		customer, err = uc.repo.CreateCustomer(ctx, searchPhone, "Cliente WhatsApp")
+		customer, err = uc.repo.CreateCustomer(ctx, ownerID, searchPhone, "Cliente WhatsApp")
 		if err != nil {
 			return fmt.Errorf("erro ao criar cliente: %w", err)
 		}
 	}
 
-	session, err := uc.repo.GetActiveSessionByPhone(ctx, searchPhone)
+	session, err := uc.repo.GetActiveSessionByPhone(ctx, ownerID, searchPhone)
 	if err != nil {
 		fmt.Println("🆕 Nenhuma sessão ativa. Criando nova conversa...")
 		session, err = uc.repo.CreateSession(ctx, customer.ID)
@@ -133,13 +128,14 @@ func (uc *chatUseCase) ProcessIncomingMessage(ctx context.Context, sender types.
 	}
 
 	// Sem IA: as mensagens recebidas são apenas registradas para atendimento humano.
+	_ = client
 	return nil
 }
 
 // BroadcastMessage envia a mesma mensagem para uma lista de números com um
 // intervalo aleatório entre cada envio, reduzindo o risco de banimento por spam.
 // onProgress é chamado após cada tentativa de envio (pode ser nil).
-func (uc *chatUseCase) BroadcastMessage(ctx context.Context, contacts []BroadcastContact, messageTemplate string, onProgress func(BroadcastResult, int, int)) error {
+func (uc *chatUseCase) BroadcastMessage(ctx context.Context, client *whatsmeow.Client, contacts []BroadcastContact, messageTemplate string, onProgress func(BroadcastResult, int, int)) error {
 	if len(contacts) == 0 {
 		return fmt.Errorf("nenhum número informado")
 	}
@@ -152,7 +148,7 @@ func (uc *chatUseCase) BroadcastMessage(ctx context.Context, contacts []Broadcas
 		result := BroadcastResult{Phone: contact.Phone}
 
 		targetJID := types.NewJID(contact.Phone, types.DefaultUserServer)
-		_, err := uc.client.SendMessage(ctx, targetJID, &waProto.Message{
+		_, err := client.SendMessage(ctx, targetJID, &waProto.Message{
 			Conversation: proto.String(renderMessage(messageTemplate, contact.Name)),
 		})
 

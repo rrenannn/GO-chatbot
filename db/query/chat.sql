@@ -7,7 +7,7 @@ VALUES ($1, 'WAITING_USER_REPLY')
 SELECT cs.*
 FROM chat_sessions cs
          JOIN customers c ON cs.customer_id = c.id
-WHERE c.phone_number = $1 AND cs.status != 'RESOLVED'
+WHERE c.user_id = $1 AND c.phone_number = $2 AND cs.status != 'RESOLVED'
 LIMIT 1;
 
 -- name: UpdateSessionStatus :exec
@@ -31,9 +31,9 @@ WHERE status IN ('WAITING_USER_REPLY', 'AI_HANDLING')
 AND last_interaction_at < NOW() - INTERVAL '24 hours';
 
 -- name: GetCustomerByPhone :one
-SELECT * FROM customers WHERE phone_number = $1 LIMIT 1;
+SELECT * FROM customers WHERE user_id = $1 AND phone_number = $2 LIMIT 1;
 
 -- name: CreateCustomer :one
-INSERT INTO customers (phone_number, name)
-VALUES ($1, $2)
+INSERT INTO customers (user_id, phone_number, name)
+VALUES ($1, $2, $3)
     RETURNING *;

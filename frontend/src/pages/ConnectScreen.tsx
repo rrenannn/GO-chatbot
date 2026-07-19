@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import StepIndicator from '../components/StepIndicator'
 import ThemeToggle from '../components/ThemeToggle'
 import { useToast } from '../components/ToastProvider'
-import { apiUrl } from '../lib/api'
+import { apiUrlWithToken, clearToken } from '../lib/api'
 import '../App.css'
 
 type Status = 'connecting' | 'qr' | 'connected' | 'error'
@@ -17,7 +17,7 @@ export default function ConnectScreen() {
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    const evtSource = new EventSource(apiUrl('/api/v1/whatsapp/qr'))
+    const evtSource = new EventSource(apiUrlWithToken('/api/v1/whatsapp/qr'))
 
     evtSource.onmessage = (event) => {
       const data = JSON.parse(event.data)
@@ -69,7 +69,15 @@ export default function ConnectScreen() {
     <div className="card">
       <div className="topBar">
         <ThemeToggle />
-        <span />
+        <button
+          className="linkBtn"
+          onClick={() => {
+            clearToken()
+            navigate('/login')
+          }}
+        >
+          Sair
+        </button>
       </div>
       <StepIndicator current={1} />
       <div className="logo">💬</div>

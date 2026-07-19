@@ -6,28 +6,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rrenannn/GO-chatbot/internal/usecase"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
+// WhatsappHandler processa eventos recebidos de QUALQUER cliente whatsmeow
+// gerenciado (um por usuário logado). É usado como callback do
+// pkg/whatsapp.Manager, que informa de qual usuário (ownerID) veio o evento.
 type WhatsappHandler struct {
-	client  *whatsmeow.Client
 	usecase usecase.ChatUseCase
 }
 
-func NewWhatsAppHandler(client *whatsmeow.Client, usecase usecase.ChatUseCase) *WhatsappHandler {
-	handler := &WhatsappHandler{client: client, usecase: usecase}
-
-	client.AddEventHandler(handler.EventHandler)
-	fmt.Println("✅ Listener do WhatsApp registrado com sucesso!")
-	return handler
+func NewWhatsAppHandler(usecase usecase.ChatUseCase) *WhatsappHandler {
+	return &WhatsappHandler{usecase: usecase}
 }
 
-func (h *WhatsappHandler) EventHandler(evt interface{}) {
+func (h *WhatsappHandler) HandleEvent(ownerID uuid.UUID, client *whatsmeow.Client, evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
-
 		if v.Message == nil {
 			return
 		}
@@ -42,7 +40,6 @@ func (h *WhatsappHandler) EventHandler(evt interface{}) {
 			return
 		}
 
-		// Extrai o texto da mensagem
 		msgText := ""
 		if v.Message.GetConversation() != "" {
 			msgText = v.Message.GetConversation()
@@ -53,9 +50,9 @@ func (h *WhatsappHandler) EventHandler(evt interface{}) {
 		if strings.TrimSpace(msgText) != "" {
 			fmt.Println("📩 MENSAGEM RECEBIDA -> De:", v.Info.Sender.User, "| Texto:", msgText)
 
-			// Chama o caso de uso em uma Goroutine separada para não travar o listener do WhatsApp
+			// Roda em goroutine separada para não travar o listener do WhatsApp
 			go func() {
-				err := h.usecase.ProcessIncomingMessage(context.Background(), v.Info.Sender, msgText)
+				err := h.usecase.ProcessIncomingMessage(context.Background(), client, ownerID, v.Info.Sender, msgText)
 				if err != nil {
 					fmt.Println("🚨 Erro no UseCase:", err)
 				}
@@ -63,10 +60,9 @@ func (h *WhatsappHandler) EventHandler(evt interface{}) {
 		}
 
 	case *events.Disconnected:
-		fmt.Println("Whatsmeow desconectado. O AutoReconnect está ativado, tentando reestabelecer...")
+		fmt.Println("Whatsmeow desconectado (usuário", ownerID, "). O AutoReconnect está ativado, tentando reestabelecer...")
 
 	case *events.LoggedOut:
-		fmt.Println("Atenção: O aparelho foi deslogado (QR Code revogado).")
-		// Aqui você dispararia um alerta para o Sentry/Slack para escanear de novo
+		fmt.Println("Atenção: o aparelho do usuário", ownerID, "foi deslogado (QR Code revogado).")
 	}
 }

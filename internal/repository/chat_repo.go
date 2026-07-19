@@ -9,14 +9,20 @@ import (
 )
 
 type ChatRepository interface {
-	GetActiveSessionByPhone(ctx context.Context, phone string) (db.ChatSession, error)
+	GetActiveSessionByPhone(ctx context.Context, userID uuid.UUID, phone string) (db.ChatSession, error)
 	CreateSession(ctx context.Context, customerID uuid.UUID) (db.ChatSession, error)
 	UpdateSessionStatus(ctx context.Context, sessionID uuid.UUID, status db.SessionStatus) error
 	InsertMessage(ctx context.Context, sessionID uuid.UUID, senderType string, content string) (db.MessageHistory, error)
 	GetSessionMessages(ctx context.Context, sessionID uuid.UUID) ([]db.MessageHistory, error)
 	CleanSessions(ctx context.Context) error
-	GetCustomerByPhone(ctx context.Context, phone string) (db.Customer, error)
-	CreateCustomer(ctx context.Context, phone string, name string) (db.Customer, error)
+	GetCustomerByPhone(ctx context.Context, userID uuid.UUID, phone string) (db.Customer, error)
+	CreateCustomer(ctx context.Context, userID uuid.UUID, phone string, name string) (db.Customer, error)
+
+	CreateUser(ctx context.Context, email string, passwordHash string) (db.User, error)
+	GetUserByEmail(ctx context.Context, email string) (db.User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (db.User, error)
+	SetUserWhatsmeowJID(ctx context.Context, userID uuid.UUID, jid string) error
+	ListPairedUsers(ctx context.Context) ([]db.User, error)
 }
 
 type chatRepo struct {
@@ -29,8 +35,11 @@ func NewChatRepository(dbConn *sql.DB) ChatRepository {
 	}
 }
 
-func (r *chatRepo) GetActiveSessionByPhone(ctx context.Context, phone string) (db.ChatSession, error) {
-	return r.q.GetActiveSessionByPhone(ctx, phone)
+func (r *chatRepo) GetActiveSessionByPhone(ctx context.Context, userID uuid.UUID, phone string) (db.ChatSession, error) {
+	return r.q.GetActiveSessionByPhone(ctx, db.GetActiveSessionByPhoneParams{
+		UserID:      uuid.NullUUID{UUID: userID, Valid: true},
+		PhoneNumber: phone,
+	})
 }
 
 func (r *chatRepo) CreateSession(ctx context.Context, customerID uuid.UUID) (db.ChatSession, error) {
@@ -60,13 +69,40 @@ func (r *chatRepo) CleanSessions(ctx context.Context) error {
 	return r.q.CleanSessions(ctx)
 }
 
-func (r *chatRepo) GetCustomerByPhone(ctx context.Context, phone string) (db.Customer, error) {
-	return r.q.GetCustomerByPhone(ctx, phone)
+func (r *chatRepo) GetCustomerByPhone(ctx context.Context, userID uuid.UUID, phone string) (db.Customer, error) {
+	return r.q.GetCustomerByPhone(ctx, db.GetCustomerByPhoneParams{
+		UserID:      uuid.NullUUID{UUID: userID, Valid: true},
+		PhoneNumber: phone,
+	})
 }
 
-func (r *chatRepo) CreateCustomer(ctx context.Context, phone string, name string) (db.Customer, error) {
+func (r *chatRepo) CreateCustomer(ctx context.Context, userID uuid.UUID, phone string, name string) (db.Customer, error) {
 	return r.q.CreateCustomer(ctx, db.CreateCustomerParams{
+		UserID:      uuid.NullUUID{UUID: userID, Valid: true},
 		PhoneNumber: phone,
 		Name:        name,
 	})
+}
+
+func (r *chatRepo) CreateUser(ctx context.Context, email string, passwordHash string) (db.User, error) {
+	return r.q.CreateUser(ctx, db.CreateUserParams{Email: email, PasswordHash: passwordHash})
+}
+
+func (r *chatRepo) GetUserByEmail(ctx context.Context, email string) (db.User, error) {
+	return r.q.GetUserByEmail(ctx, email)
+}
+
+func (r *chatRepo) GetUserByID(ctx context.Context, id uuid.UUID) (db.User, error) {
+	return r.q.GetUserByID(ctx, id)
+}
+
+func (r *chatRepo) SetUserWhatsmeowJID(ctx context.Context, userID uuid.UUID, jid string) error {
+	return r.q.SetUserWhatsmeowJID(ctx, db.SetUserWhatsmeowJIDParams{
+		ID:           userID,
+		WhatsmeowJid: sql.NullString{String: jid, Valid: jid != ""},
+	})
+}
+
+func (r *chatRepo) ListPairedUsers(ctx context.Context) ([]db.User, error) {
+	return r.q.ListPairedUsers(ctx)
 }

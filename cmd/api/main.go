@@ -34,13 +34,6 @@ func main() {
 
 	e.Static("/", "./frontend/dist")
 
-	if container.WaClient.Store.ID != nil {
-		log.Println("Sessão do WhatsApp encontrada. Conectando...")
-		if err := container.WaClient.Connect(); err != nil {
-			log.Fatalf("Falha ao conectar WhatsApp: %v", err)
-		}
-	}
-
 	port := cfg.ServerPort
 	if port == "" {
 		port = "8080"

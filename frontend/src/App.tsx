@@ -1,9 +1,32 @@
-import { HashRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { HashRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
+import type { ReactNode } from 'react'
+import LoginScreen from './pages/LoginScreen'
 import ConnectScreen from './pages/ConnectScreen'
 import BroadcastScreen from './pages/BroadcastScreen'
 import { ToastProvider } from './components/ToastProvider'
+import { getToken } from './lib/api'
 import './App.css'
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  if (!getToken()) {
+    return <Navigate to="/login" replace />
+  }
+  return <>{children}</>
+}
+
+function Page({ children }: { children: ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+    >
+      {children}
+    </motion.div>
+  )
+}
 
 function AnimatedRoutes() {
   const location = useLocation()
@@ -12,29 +35,31 @@ function AnimatedRoutes() {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route
+          path="/login"
+          element={
+            <Page>
+              <LoginScreen />
+            </Page>
+          }
+        />
+        <Route
           path="/"
           element={
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              <ConnectScreen />
-            </motion.div>
+            <RequireAuth>
+              <Page>
+                <ConnectScreen />
+              </Page>
+            </RequireAuth>
           }
         />
         <Route
           path="/broadcast"
           element={
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              <BroadcastScreen />
-            </motion.div>
+            <RequireAuth>
+              <Page>
+                <BroadcastScreen />
+              </Page>
+            </RequireAuth>
           }
         />
       </Routes>

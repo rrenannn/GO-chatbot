@@ -67,10 +67,11 @@ type ChatSession struct {
 }
 
 type Customer struct {
-	ID          uuid.UUID    `json:"id"`
-	PhoneNumber string       `json:"phone_number"`
-	Name        string       `json:"name"`
-	CreatedAt   sql.NullTime `json:"created_at"`
+	ID          uuid.UUID     `json:"id"`
+	PhoneNumber string        `json:"phone_number"`
+	Name        string        `json:"name"`
+	CreatedAt   sql.NullTime  `json:"created_at"`
+	UserID      uuid.NullUUID `json:"user_id"`
 }
 
 type MessageHistory struct {
@@ -79,4 +80,12 @@ type MessageHistory struct {
 	SenderType sql.NullString `json:"sender_type"`
 	Content    string         `json:"content"`
 	CreatedAt  sql.NullTime   `json:"created_at"`
+}
+
+type User struct {
+	ID           uuid.UUID      `json:"id"`
+	Email        string         `json:"email"`
+	PasswordHash string         `json:"password_hash"`
+	WhatsmeowJid sql.NullString `json:"whatsmeow_jid"`
+	CreatedAt    sql.NullTime   `json:"created_at"`
 }

@@ -4,7 +4,7 @@ import StepIndicator from '../components/StepIndicator'
 import ConfirmModal from '../components/ConfirmModal'
 import ThemeToggle from '../components/ThemeToggle'
 import { useToast } from '../components/ToastProvider'
-import { apiUrl } from '../lib/api'
+import { authFetch, clearToken } from '../lib/api'
 import '../App.css'
 
 const MAX_RECIPIENTS = 200
@@ -123,9 +123,8 @@ export default function BroadcastScreen() {
     setProgress({ sent: 0, total: contacts.length })
 
     try {
-      const response = await fetch(apiUrl('/api/v1/broadcast'), {
+      const response = await authFetch('/api/v1/broadcast', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contacts, message }),
       })
 
@@ -181,9 +180,20 @@ export default function BroadcastScreen() {
     <div className="card wide">
       <div className="topBar">
         <ThemeToggle />
-        <button className="linkBtn" onClick={() => navigate('/')}>
-          Reconectar dispositivo
-        </button>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button className="linkBtn" onClick={() => navigate('/')}>
+            Reconectar dispositivo
+          </button>
+          <button
+            className="linkBtn"
+            onClick={() => {
+              clearToken()
+              navigate('/login')
+            }}
+          >
+            Sair
+          </button>
+        </div>
       </div>
       <StepIndicator current={2} />
       <div className="logo">📢</div>

@@ -24,24 +24,26 @@ func (q *Queries) CleanSessions(ctx context.Context) error {
 }
 
 const createCustomer = `-- name: CreateCustomer :one
-INSERT INTO customers (phone_number, name)
-VALUES ($1, $2)
-    RETURNING id, phone_number, name, created_at
+INSERT INTO customers (user_id, phone_number, name)
+VALUES ($1, $2, $3)
+    RETURNING id, phone_number, name, created_at, user_id
 `
 
 type CreateCustomerParams struct {
-	PhoneNumber string `json:"phone_number"`
-	Name        string `json:"name"`
+	UserID      uuid.NullUUID `json:"user_id"`
+	PhoneNumber string        `json:"phone_number"`
+	Name        string        `json:"name"`
 }
 
 func (q *Queries) CreateCustomer(ctx context.Context, arg CreateCustomerParams) (Customer, error) {
-	row := q.db.QueryRowContext(ctx, createCustomer, arg.PhoneNumber, arg.Name)
+	row := q.db.QueryRowContext(ctx, createCustomer, arg.UserID, arg.PhoneNumber, arg.Name)
 	var i Customer
 	err := row.Scan(
 		&i.ID,
 		&i.PhoneNumber,
 		&i.Name,
 		&i.CreatedAt,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -70,12 +72,17 @@ const getActiveSessionByPhone = `-- name: GetActiveSessionByPhone :one
 SELECT cs.id, cs.customer_id, cs.status, cs.started_at, cs.last_interaction_at, cs.assigned_agent
 FROM chat_sessions cs
          JOIN customers c ON cs.customer_id = c.id
-WHERE c.phone_number = $1 AND cs.status != 'RESOLVED'
+WHERE c.user_id = $1 AND c.phone_number = $2 AND cs.status != 'RESOLVED'
 LIMIT 1
 `
 
-func (q *Queries) GetActiveSessionByPhone(ctx context.Context, phoneNumber string) (ChatSession, error) {
-	row := q.db.QueryRowContext(ctx, getActiveSessionByPhone, phoneNumber)
+type GetActiveSessionByPhoneParams struct {
+	UserID      uuid.NullUUID `json:"user_id"`
+	PhoneNumber string        `json:"phone_number"`
+}
+
+func (q *Queries) GetActiveSessionByPhone(ctx context.Context, arg GetActiveSessionByPhoneParams) (ChatSession, error) {
+	row := q.db.QueryRowContext(ctx, getActiveSessionByPhone, arg.UserID, arg.PhoneNumber)
 	var i ChatSession
 	err := row.Scan(
 		&i.ID,
@@ -89,17 +96,23 @@ func (q *Queries) GetActiveSessionByPhone(ctx context.Context, phoneNumber strin
 }
 
 const getCustomerByPhone = `-- name: GetCustomerByPhone :one
-SELECT id, phone_number, name, created_at FROM customers WHERE phone_number = $1 LIMIT 1
+SELECT id, phone_number, name, created_at, user_id FROM customers WHERE user_id = $1 AND phone_number = $2 LIMIT 1
 `
 
-func (q *Queries) GetCustomerByPhone(ctx context.Context, phoneNumber string) (Customer, error) {
-	row := q.db.QueryRowContext(ctx, getCustomerByPhone, phoneNumber)
+type GetCustomerByPhoneParams struct {
+	UserID      uuid.NullUUID `json:"user_id"`
+	PhoneNumber string        `json:"phone_number"`
+}
+
+func (q *Queries) GetCustomerByPhone(ctx context.Context, arg GetCustomerByPhoneParams) (Customer, error) {
+	row := q.db.QueryRowContext(ctx, getCustomerByPhone, arg.UserID, arg.PhoneNumber)
 	var i Customer
 	err := row.Scan(
 		&i.ID,
 		&i.PhoneNumber,
 		&i.Name,
 		&i.CreatedAt,
+		&i.UserID,
 	)
 	return i, err
 }
