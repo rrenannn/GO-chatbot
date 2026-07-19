@@ -50,6 +50,7 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 	authed := api.Group("", h.authMiddleware)
 	authed.POST("/trigger-post-sale", h.TriggerPostSale)
 	authed.GET("/whatsapp/qr", h.StreamQRCode)
+	authed.GET("/whatsapp/status", h.WhatsAppStatus)
 	authed.POST("/broadcast", h.Broadcast)
 }
 
@@ -223,6 +224,25 @@ func (h *HttpHandler) ensureQRWatcher(state *qrSharedState, client *whatsmeow.Cl
 			}
 		}
 	}()
+}
+
+// WhatsAppStatus é consultado periodicamente pela tela de disparo para
+// detectar se o usuário desconectou o aparelho pelo próprio celular enquanto
+// usava o painel, permitindo voltar para a tela de QR automaticamente.
+func (h *HttpHandler) WhatsAppStatus(c echo.Context) error {
+	userID := h.userID(c)
+
+	user, err := h.repo.GetUserByID(c.Request().Context(), userID)
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]bool{"connected": false})
+	}
+
+	client, err := h.waManager.GetClient(userID, user.WhatsmeowJid.String)
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]bool{"connected": false})
+	}
+
+	return c.JSON(http.StatusOK, map[string]bool{"connected": client.Store.ID != nil})
 }
 
 func (h *HttpHandler) StreamQRCode(c echo.Context) error {

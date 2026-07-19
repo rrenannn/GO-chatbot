@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StepIndicator from '../components/StepIndicator'
 import ConfirmModal from '../components/ConfirmModal'
@@ -69,6 +69,33 @@ export default function BroadcastScreen() {
   const messageRef = useRef<HTMLTextAreaElement>(null)
 
   const contacts = parseContacts(phonesRaw)
+
+  // Verifica periodicamente se a sessão do WhatsApp ainda está válida — se o
+  // aparelho for desconectado pelo próprio celular, volta para a tela de QR.
+  useEffect(() => {
+    let cancelled = false
+
+    async function checkStatus() {
+      try {
+        const response = await authFetch('/api/v1/whatsapp/status')
+        if (!response.ok) return
+        const data = await response.json()
+        if (!cancelled && data.connected === false) {
+          toast('O WhatsApp foi desconectado. Escaneie o QR Code novamente.', 'error')
+          navigate('/')
+        }
+      } catch {
+        // falha de rede pontual não deve derrubar a tela
+      }
+    }
+
+    const interval = setInterval(checkStatus, 15000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate])
 
   function insertVariable(token: string) {
     const el = messageRef.current
@@ -180,18 +207,18 @@ export default function BroadcastScreen() {
     <div className="card wide">
       <div className="topBar">
         <ThemeToggle />
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div className="topBarActions">
           <button className="linkBtn" onClick={() => navigate('/')}>
             Reconectar dispositivo
           </button>
           <button
-            className="linkBtn"
+            className="logoutBtn"
             onClick={() => {
               clearToken()
               navigate('/login')
             }}
           >
-            Sair
+            🚪 Sair
           </button>
         </div>
       </div>

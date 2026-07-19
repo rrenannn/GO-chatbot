@@ -239,7 +239,9 @@ label {
 }
 
 textarea,
-input[type='text'] {
+input[type='text'],
+input[type='email'],
+input[type='password'] {
   width: 100%;
   background: var(--input-bg);
   border: 1px solid var(--card-border);
@@ -249,10 +251,13 @@ input[type='text'] {
   font-family: inherit;
   font-size: 14px;
   resize: vertical;
+  box-sizing: border-box;
 }
 
 textarea:focus,
-input[type='text']:focus {
+input[type='text']:focus,
+input[type='email']:focus,
+input[type='password']:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -356,6 +361,13 @@ input[type='text']:focus {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
+  gap: 10px;
+}
+
+.topBarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .linkBtn {
@@ -368,6 +380,25 @@ input[type='text']:focus {
 }
 .linkBtn:hover {
   color: var(--text);
+}
+
+.logoutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.logoutBtn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .stepIndicator {

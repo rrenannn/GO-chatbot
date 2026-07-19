@@ -28,6 +28,9 @@ type Manager struct {
 	OnEvent func(userID uuid.UUID, client *whatsmeow.Client, evt interface{})
 	// OnPaired é chamado quando o pareamento de um usuário é concluído, para persistir o JID.
 	OnPaired func(userID uuid.UUID, jid string)
+	// OnLoggedOut é chamado quando o usuário desconecta o aparelho pelo próprio
+	// WhatsApp (fora do nosso controle), para limpar o JID salvo no banco.
+	OnLoggedOut func(userID uuid.UUID)
 }
 
 func NewManager() (*Manager, error) {
@@ -78,9 +81,33 @@ func (m *Manager) GetClient(userID uuid.UUID, existingJID string) (*whatsmeow.Cl
 	client.AutoTrustIdentity = true
 
 	client.AddEventHandler(func(evt interface{}) {
-		if _, ok := evt.(*events.PairSuccess); ok && client.Store.ID != nil && m.OnPaired != nil {
-			m.OnPaired(userID, client.Store.ID.String())
+		switch evt.(type) {
+		case *events.PairSuccess:
+			if client.Store.ID != nil && m.OnPaired != nil {
+				m.OnPaired(userID, client.Store.ID.String())
+			}
+
+		case *events.LoggedOut:
+			// O whatsmeow NÃO limpa Store.ID sozinho quando o aparelho é
+			// desconectado pelo celular, então sem isso o app continuaria achando
+			// que a sessão está válida para sempre. Apaga o dispositivo e derruba
+			// o cliente do cache: a próxima vez que esse usuário abrir a tela de
+			// QR, um dispositivo novo (sem ID) é criado, permitindo um novo pareamento.
+			go func() {
+				if err := m.container.DeleteDevice(context.Background(), client.Store); err != nil {
+					fmt.Println("🚨 Erro ao remover dispositivo deslogado:", userID, err)
+				}
+			}()
+
+			m.mu.Lock()
+			delete(m.clients, userID)
+			m.mu.Unlock()
+
+			if m.OnLoggedOut != nil {
+				m.OnLoggedOut(userID)
+			}
 		}
+
 		if m.OnEvent != nil {
 			m.OnEvent(userID, client, evt)
 		}

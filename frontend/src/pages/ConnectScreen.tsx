@@ -70,13 +70,13 @@ export default function ConnectScreen() {
       <div className="topBar">
         <ThemeToggle />
         <button
-          className="linkBtn"
+          className="logoutBtn"
           onClick={() => {
             clearToken()
             navigate('/login')
           }}
         >
-          Sair
+          🚪 Sair
         </button>
       </div>
       <StepIndicator current={1} />

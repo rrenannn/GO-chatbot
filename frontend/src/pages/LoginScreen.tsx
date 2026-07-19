@@ -53,7 +53,7 @@ export default function LoginScreen() {
         <label htmlFor="email">E-mail</label>
         <input
           id="email"
-          type="text"
+          type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="username"

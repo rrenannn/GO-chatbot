@@ -78,6 +78,11 @@ func (c *ContainerDI) buildClients() {
 			log.Println("🚨 Erro ao salvar JID do usuário:", err)
 		}
 	}
+	manager.OnLoggedOut = func(userID uuid.UUID) {
+		if err := c.ChatRepo.SetUserWhatsmeowJID(context.Background(), userID, ""); err != nil {
+			log.Println("🚨 Erro ao limpar JID do usuário deslogado:", err)
+		}
+	}
 
 	c.WaManager = manager
 }
