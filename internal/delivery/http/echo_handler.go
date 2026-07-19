@@ -45,12 +45,10 @@ type qrSharedState struct {
 	status  string // "" (aguardando) | "QR_CODE" | "CONNECTED" | "ERROR"
 	code    string
 	version int
+	active  bool // true enquanto um watcher está de fato tentando parear
 }
 
-var (
-	qrShared     = &qrSharedState{}
-	qrWatcherOne sync.Once
-)
+var qrShared = &qrSharedState{}
 
 func (s *qrSharedState) set(status, code string) {
 	s.mu.Lock()
@@ -66,40 +64,58 @@ func (s *qrSharedState) snapshot() (status, code string, version int) {
 	return s.status, s.code, s.version
 }
 
-// ensureQRWatcher inicia (uma única vez por processo) o goroutine que possui o
-// canal de QR code do whatsmeow e conecta o cliente.
+// ensureQRWatcher garante que exista um goroutine tentando parear. Diferente
+// de sync.Once, ele pode iniciar uma NOVA tentativa sempre que a anterior
+// terminar (sucesso, erro ou timeout do QR code) — sem isso, uma vez que o QR
+// expirasse o processo nunca mais tentaria de novo, exigindo reiniciar o app.
 func (h *HttpHandler) ensureQRWatcher() {
-	qrWatcherOne.Do(func() {
-		qrChan, err := h.waClient.GetQRChannel(context.Background())
-		if err != nil {
-			fmt.Println("🚨 Erro ao obter canal de QR code:", err)
-			qrShared.set("ERROR", "")
+	qrShared.mu.Lock()
+	if qrShared.active {
+		qrShared.mu.Unlock()
+		return
+	}
+	qrShared.active = true
+	qrShared.status = ""
+	qrShared.code = ""
+	qrShared.version++
+	qrShared.mu.Unlock()
+
+	finish := func(status string) {
+		qrShared.set(status, "")
+		qrShared.mu.Lock()
+		qrShared.active = false
+		qrShared.mu.Unlock()
+	}
+
+	qrChan, err := h.waClient.GetQRChannel(context.Background())
+	if err != nil {
+		fmt.Println("🚨 Erro ao obter canal de QR code:", err)
+		finish("ERROR")
+		return
+	}
+
+	if !h.waClient.IsConnected() {
+		if err := h.waClient.Connect(); err != nil {
+			fmt.Println("🚨 Erro ao conectar WhatsApp:", err)
+			finish("ERROR")
 			return
 		}
+	}
 
-		if !h.waClient.IsConnected() {
-			if err := h.waClient.Connect(); err != nil {
-				fmt.Println("🚨 Erro ao conectar WhatsApp:", err)
-				qrShared.set("ERROR", "")
+	go func() {
+		for evt := range qrChan {
+			switch evt.Event {
+			case "code":
+				qrShared.set("QR_CODE", evt.Code)
+			case "success":
+				finish("CONNECTED")
+				return
+			case "timeout", "error":
+				finish("ERROR")
 				return
 			}
 		}
-
-		go func() {
-			for evt := range qrChan {
-				switch evt.Event {
-				case "code":
-					qrShared.set("QR_CODE", evt.Code)
-				case "success":
-					qrShared.set("CONNECTED", "")
-					return
-				case "timeout", "error":
-					qrShared.set("ERROR", "")
-					return
-				}
-			}
-		}()
-	})
+	}()
 }
 
 func (h *HttpHandler) StreamQRCode(c echo.Context) error {
