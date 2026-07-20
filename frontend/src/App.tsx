@@ -2,7 +2,6 @@ import { HashRouter, Routes, Route, useLocation, Navigate } from 'react-router-d
 import { AnimatePresence, motion } from 'framer-motion'
 import type { ReactNode } from 'react'
 import LoginScreen from './pages/LoginScreen'
-import RegisterScreen from './pages/RegisterScreen'
 import ConnectScreen from './pages/ConnectScreen'
 import BroadcastScreen from './pages/BroadcastScreen'
 import { ToastProvider } from './components/ToastProvider'
@@ -50,14 +49,6 @@ function AnimatedRoutes() {
           element={
             <Page>
               <LoginScreen />
-            </Page>
-          }
-        />
-        <Route
-          path="/register"
-          element={
-            <Page>
-              <RegisterScreen />
             </Page>
           }
         />

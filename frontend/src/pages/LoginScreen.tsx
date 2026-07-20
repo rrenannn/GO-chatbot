@@ -75,12 +75,7 @@ export default function LoginScreen() {
         </button>
       </form>
 
-      <p className="hint">
-        Não tem conta?{' '}
-        <button type="button" className="linkBtn" onClick={() => navigate('/register')}>
-          Cadastre-se
-        </button>
-      </p>
+      <p className="hint">Não tem acesso? Fale com o administrador do sistema.</p>
     </div>
   )
 }

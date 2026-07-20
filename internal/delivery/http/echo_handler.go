@@ -45,20 +45,18 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 	api := e.Group("/api/v1")
 
 	api.POST("/auth/login", h.Login)
-	api.POST("/auth/register", h.Register)
 	api.POST("/admin/users", h.CreateUser)
 	api.POST("/admin/users/:id/activate", h.ActivateUser)
 	api.POST("/admin/users/:id/deactivate", h.DeactivateUser)
 	api.POST("/admin/users/:id/set-admin", h.SetUserAdmin)
 
-	authed := api.Group("", h.authMiddleware)
-	authed.GET("/whatsapp/qr", h.StreamQRCode)
-	authed.GET("/whatsapp/status", h.WhatsAppStatus)
-
-	adminOnly := authed.Group("", h.requireAdmin)
-	adminOnly.POST("/trigger-post-sale", h.TriggerPostSale)
-	adminOnly.POST("/broadcast", h.Broadcast)
-	adminOnly.POST("/impersonate", h.Impersonate)
+	// Middleware aplicado por rota (em vez de sub-grupos com prefixo vazio,
+	// que no Echo podem vazar o middleware para rotas que não deveriam tê-lo).
+	api.GET("/whatsapp/qr", h.StreamQRCode, h.authMiddleware)
+	api.GET("/whatsapp/status", h.WhatsAppStatus, h.authMiddleware)
+	api.POST("/trigger-post-sale", h.TriggerPostSale, h.authMiddleware, h.requireAdmin)
+	api.POST("/broadcast", h.Broadcast, h.authMiddleware, h.requireAdmin)
+	api.POST("/impersonate", h.Impersonate, h.authMiddleware, h.requireAdmin)
 }
 
 // authMiddleware aceita o token tanto no header Authorization: Bearer quanto
@@ -133,43 +131,6 @@ func (h *HttpHandler) Login(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{"token": token, "is_admin": user.IsAdmin})
-}
-
-type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// Register é o cadastro público (sem chave de admin). Toda conta criada por
-// aqui nasce SEM privilégio de admin — só consegue parear o próprio WhatsApp
-// e depender de um admin para efetivamente disparar mensagens.
-func (h *HttpHandler) Register(c echo.Context) error {
-	req := new(RegisterRequest)
-	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "JSON inválido"})
-	}
-
-	email := strings.TrimSpace(strings.ToLower(req.Email))
-	if email == "" || len(req.Password) < 8 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "E-mail obrigatório e senha com pelo menos 8 caracteres"})
-	}
-
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao gerar senha"})
-	}
-
-	user, err := h.repo.CreateUser(c.Request().Context(), email, hash, false)
-	if err != nil {
-		return c.JSON(http.StatusConflict, map[string]string{"error": "Não foi possível criar (e-mail já existe?)"})
-	}
-
-	token, err := auth.IssueToken(h.jwtSecret, user.ID, false)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao gerar sessão"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{"token": token, "is_admin": false})
 }
 
 type CreateUserRequest struct {
