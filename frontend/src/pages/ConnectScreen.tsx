@@ -3,8 +3,9 @@ import QRCode from 'react-qr-code'
 import { useNavigate } from 'react-router-dom'
 import StepIndicator from '../components/StepIndicator'
 import ThemeToggle from '../components/ThemeToggle'
+import ImpersonatePanel from '../components/ImpersonatePanel'
 import { useToast } from '../components/ToastProvider'
-import { apiUrlWithToken, clearToken } from '../lib/api'
+import { apiUrlWithToken, clearToken, isAdmin } from '../lib/api'
 import '../App.css'
 
 type Status = 'connecting' | 'qr' | 'connected' | 'error'
@@ -15,6 +16,7 @@ export default function ConnectScreen() {
   const navigate = useNavigate()
   const toast = useToast()
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const admin = isAdmin()
 
   useEffect(() => {
     const evtSource = new EventSource(apiUrlWithToken('/api/v1/whatsapp/qr'))
@@ -28,9 +30,11 @@ export default function ConnectScreen() {
       } else if (data.status === 'CONNECTED') {
         setStatus('connected')
         evtSource.close()
-        redirectTimer.current = setTimeout(() => {
-          navigate('/broadcast')
-        }, 1800)
+        if (admin) {
+          redirectTimer.current = setTimeout(() => {
+            navigate('/broadcast')
+          }, 1800)
+        }
       } else if (data.status === 'ERROR') {
         setStatus('error')
         toast('Erro ao gerar o QR Code. Tente novamente.', 'error')
@@ -58,8 +62,14 @@ export default function ConnectScreen() {
         <div className="loadingScreen">
           <div className="connectedIcon">✅</div>
           <h1>Dispositivo conectado!</h1>
-          <div className="spinner large" />
-          <p>Preparando o painel de disparo...</p>
+          {admin ? (
+            <>
+              <div className="spinner large" />
+              <p>Preparando o painel de disparo...</p>
+            </>
+          ) : (
+            <p>Tudo certo! Um administrador poderá enviar mensagens usando este número.</p>
+          )}
         </div>
       </div>
     )
@@ -109,6 +119,8 @@ export default function ConnectScreen() {
           Tentar novamente
         </button>
       )}
+
+      {admin && <ImpersonatePanel />}
     </div>
   )
 }

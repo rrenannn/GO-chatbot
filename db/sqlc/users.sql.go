@@ -13,18 +13,19 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash)
-VALUES ($1, $2)
-    RETURNING id, email, password_hash, whatsmeow_jid, created_at
+INSERT INTO users (email, password_hash, is_admin)
+VALUES ($1, $2, $3)
+    RETURNING id, email, password_hash, whatsmeow_jid, created_at, is_active, is_admin
 `
 
 type CreateUserParams struct {
 	Email        string `json:"email"`
 	PasswordHash string `json:"password_hash"`
+	IsAdmin      bool   `json:"is_admin"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser, arg.Email, arg.PasswordHash)
+	row := q.db.QueryRowContext(ctx, createUser, arg.Email, arg.PasswordHash, arg.IsAdmin)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -32,12 +33,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.WhatsmeowJid,
 		&i.CreatedAt,
+		&i.IsActive,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, whatsmeow_jid, created_at FROM users WHERE email = $1 LIMIT 1
+SELECT id, email, password_hash, whatsmeow_jid, created_at, is_active, is_admin FROM users WHERE email = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -49,12 +52,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.WhatsmeowJid,
 		&i.CreatedAt,
+		&i.IsActive,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, whatsmeow_jid, created_at FROM users WHERE id = $1 LIMIT 1
+SELECT id, email, password_hash, whatsmeow_jid, created_at, is_active, is_admin FROM users WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -66,12 +71,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.PasswordHash,
 		&i.WhatsmeowJid,
 		&i.CreatedAt,
+		&i.IsActive,
+		&i.IsAdmin,
 	)
 	return i, err
 }
 
 const listPairedUsers = `-- name: ListPairedUsers :many
-SELECT id, email, password_hash, whatsmeow_jid, created_at FROM users WHERE whatsmeow_jid IS NOT NULL
+SELECT id, email, password_hash, whatsmeow_jid, created_at, is_active, is_admin FROM users WHERE whatsmeow_jid IS NOT NULL
 `
 
 func (q *Queries) ListPairedUsers(ctx context.Context) ([]User, error) {
@@ -89,6 +96,8 @@ func (q *Queries) ListPairedUsers(ctx context.Context) ([]User, error) {
 			&i.PasswordHash,
 			&i.WhatsmeowJid,
 			&i.CreatedAt,
+			&i.IsActive,
+			&i.IsAdmin,
 		); err != nil {
 			return nil, err
 		}
@@ -101,6 +110,34 @@ func (q *Queries) ListPairedUsers(ctx context.Context) ([]User, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUserActive = `-- name: SetUserActive :exec
+UPDATE users SET is_active = $2 WHERE id = $1
+`
+
+type SetUserActiveParams struct {
+	ID       uuid.UUID `json:"id"`
+	IsActive bool      `json:"is_active"`
+}
+
+func (q *Queries) SetUserActive(ctx context.Context, arg SetUserActiveParams) error {
+	_, err := q.db.ExecContext(ctx, setUserActive, arg.ID, arg.IsActive)
+	return err
+}
+
+const setUserAdmin = `-- name: SetUserAdmin :exec
+UPDATE users SET is_admin = $2 WHERE id = $1
+`
+
+type SetUserAdminParams struct {
+	ID      uuid.UUID `json:"id"`
+	IsAdmin bool      `json:"is_admin"`
+}
+
+func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.ID, arg.IsAdmin)
+	return err
 }
 
 const setUserWhatsmeowJID = `-- name: SetUserWhatsmeowJID :exec

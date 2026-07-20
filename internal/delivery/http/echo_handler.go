@@ -46,12 +46,18 @@ func (h *HttpHandler) RegisterRoutes(e *echo.Echo) {
 
 	api.POST("/auth/login", h.Login)
 	api.POST("/admin/users", h.CreateUser)
+	api.POST("/admin/users/:id/activate", h.ActivateUser)
+	api.POST("/admin/users/:id/deactivate", h.DeactivateUser)
+	api.POST("/admin/users/:id/set-admin", h.SetUserAdmin)
 
 	authed := api.Group("", h.authMiddleware)
-	authed.POST("/trigger-post-sale", h.TriggerPostSale)
 	authed.GET("/whatsapp/qr", h.StreamQRCode)
 	authed.GET("/whatsapp/status", h.WhatsAppStatus)
-	authed.POST("/broadcast", h.Broadcast)
+
+	adminOnly := authed.Group("", h.requireAdmin)
+	adminOnly.POST("/trigger-post-sale", h.TriggerPostSale)
+	adminOnly.POST("/broadcast", h.Broadcast)
+	adminOnly.POST("/impersonate", h.Impersonate)
 }
 
 // authMiddleware aceita o token tanto no header Authorization: Bearer quanto
@@ -68,18 +74,36 @@ func (h *HttpHandler) authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Não autenticado"})
 		}
 
-		userID, err := auth.ParseToken(h.jwtSecret, token)
+		claims, err := auth.ParseToken(h.jwtSecret, token)
 		if err != nil {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Sessão inválida, faça login novamente"})
 		}
 
-		c.Set("userID", userID)
+		c.Set("userID", claims.UserID)
+		c.Set("isAdmin", claims.IsAdmin)
+		return next(c)
+	}
+}
+
+// requireAdmin bloqueia contas que não são admin (elas só podem escanear o QR
+// e pairear o próprio WhatsApp — quem envia mensagens por elas é um admin
+// "assumindo" a sessão via /impersonate).
+func (h *HttpHandler) requireAdmin(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if !h.isAdmin(c) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "Apenas administradores podem fazer isso"})
+		}
 		return next(c)
 	}
 }
 
 func (h *HttpHandler) userID(c echo.Context) uuid.UUID {
 	return c.Get("userID").(uuid.UUID)
+}
+
+func (h *HttpHandler) isAdmin(c echo.Context) bool {
+	admin, _ := c.Get("isAdmin").(bool)
+	return admin
 }
 
 type LoginRequest struct {
@@ -98,24 +122,33 @@ func (h *HttpHandler) Login(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "E-mail ou senha inválidos"})
 	}
 
-	token, err := auth.IssueToken(h.jwtSecret, user.ID)
+	if !user.IsActive {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Conta desativada. Fale com o administrador."})
+	}
+
+	token, err := auth.IssueToken(h.jwtSecret, user.ID, user.IsAdmin)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao gerar sessão"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"token": token})
+	return c.JSON(http.StatusOK, map[string]interface{}{"token": token, "is_admin": user.IsAdmin})
 }
 
 type CreateUserRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	IsAdmin  bool   `json:"is_admin"`
+}
+
+func (h *HttpHandler) requireAdminAPIKey(c echo.Context) bool {
+	return h.adminAPIKey != "" && c.Request().Header.Get("X-Admin-Key") == h.adminAPIKey
 }
 
 // CreateUser não é exposto no front — é usado manualmente (ex: via curl) pelo
 // administrador para cadastrar quem pode acessar o painel, protegido pela
 // chave ADMIN_API_KEY.
 func (h *HttpHandler) CreateUser(c echo.Context) error {
-	if h.adminAPIKey == "" || c.Request().Header.Get("X-Admin-Key") != h.adminAPIKey {
+	if !h.requireAdminAPIKey(c) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Não autorizado"})
 	}
 
@@ -134,12 +167,97 @@ func (h *HttpHandler) CreateUser(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao gerar senha"})
 	}
 
-	user, err := h.repo.CreateUser(c.Request().Context(), email, hash)
+	user, err := h.repo.CreateUser(c.Request().Context(), email, hash, req.IsAdmin)
 	if err != nil {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "Não foi possível criar (e-mail já existe?)"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"id": user.ID.String(), "email": user.Email})
+	return c.JSON(http.StatusOK, map[string]interface{}{"id": user.ID.String(), "email": user.Email, "is_admin": user.IsAdmin})
+}
+
+// ActivateUser e DeactivateUser também são protegidos pela ADMIN_API_KEY (não
+// pelo JWT), já que servem para o administrador gerenciar contas por fora do
+// próprio painel — inclusive a de administradores, se necessário.
+func (h *HttpHandler) ActivateUser(c echo.Context) error {
+	return h.setUserActive(c, true)
+}
+
+func (h *HttpHandler) DeactivateUser(c echo.Context) error {
+	return h.setUserActive(c, false)
+}
+
+func (h *HttpHandler) setUserActive(c echo.Context, active bool) error {
+	if !h.requireAdminAPIKey(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Não autorizado"})
+	}
+
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "ID inválido"})
+	}
+
+	if err := h.repo.SetUserActive(c.Request().Context(), id, active); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao atualizar usuário"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]bool{"is_active": active})
+}
+
+type SetAdminRequest struct {
+	IsAdmin bool `json:"is_admin"`
+}
+
+func (h *HttpHandler) SetUserAdmin(c echo.Context) error {
+	if !h.requireAdminAPIKey(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Não autorizado"})
+	}
+
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "ID inválido"})
+	}
+
+	req := new(SetAdminRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "JSON inválido"})
+	}
+
+	if err := h.repo.SetUserAdmin(c.Request().Context(), id, req.IsAdmin); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao atualizar usuário"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]bool{"is_admin": req.IsAdmin})
+}
+
+type ImpersonateRequest struct {
+	Email string `json:"email"`
+}
+
+// Impersonate permite que um admin gere um token para agir como outro
+// usuário (ex: enviar o disparo em massa usando o WhatsApp que ELE pareou),
+// já que contas não-admin não podem usar /broadcast diretamente.
+func (h *HttpHandler) Impersonate(c echo.Context) error {
+	req := new(ImpersonateRequest)
+	if err := c.Bind(req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "JSON inválido"})
+	}
+
+	target, err := h.repo.GetUserByEmail(c.Request().Context(), strings.TrimSpace(strings.ToLower(req.Email)))
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Usuário não encontrado"})
+	}
+	if !target.IsActive {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Essa conta está desativada"})
+	}
+
+	// isAdmin do token continua true (quem está agindo é o admin), mesmo que
+	// o usuário assumido não seja admin.
+	token, err := auth.IssueToken(h.jwtSecret, target.ID, true)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Erro ao gerar sessão"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"token": token, "email": target.Email})
 }
 
 // qrSharedState guarda o último status de pareamento conhecido de UM usuário.

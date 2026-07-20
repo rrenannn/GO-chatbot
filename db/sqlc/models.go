@@ -88,4 +88,6 @@ type User struct {
 	PasswordHash string         `json:"password_hash"`
 	WhatsmeowJid sql.NullString `json:"whatsmeow_jid"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
+	IsActive     bool           `json:"is_active"`
+	IsAdmin      bool           `json:"is_admin"`
 }

@@ -18,11 +18,13 @@ type ChatRepository interface {
 	GetCustomerByPhone(ctx context.Context, userID uuid.UUID, phone string) (db.Customer, error)
 	CreateCustomer(ctx context.Context, userID uuid.UUID, phone string, name string) (db.Customer, error)
 
-	CreateUser(ctx context.Context, email string, passwordHash string) (db.User, error)
+	CreateUser(ctx context.Context, email string, passwordHash string, isAdmin bool) (db.User, error)
 	GetUserByEmail(ctx context.Context, email string) (db.User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (db.User, error)
 	SetUserWhatsmeowJID(ctx context.Context, userID uuid.UUID, jid string) error
 	ListPairedUsers(ctx context.Context) ([]db.User, error)
+	SetUserActive(ctx context.Context, userID uuid.UUID, active bool) error
+	SetUserAdmin(ctx context.Context, userID uuid.UUID, isAdmin bool) error
 }
 
 type chatRepo struct {
@@ -84,8 +86,8 @@ func (r *chatRepo) CreateCustomer(ctx context.Context, userID uuid.UUID, phone s
 	})
 }
 
-func (r *chatRepo) CreateUser(ctx context.Context, email string, passwordHash string) (db.User, error) {
-	return r.q.CreateUser(ctx, db.CreateUserParams{Email: email, PasswordHash: passwordHash})
+func (r *chatRepo) CreateUser(ctx context.Context, email string, passwordHash string, isAdmin bool) (db.User, error) {
+	return r.q.CreateUser(ctx, db.CreateUserParams{Email: email, PasswordHash: passwordHash, IsAdmin: isAdmin})
 }
 
 func (r *chatRepo) GetUserByEmail(ctx context.Context, email string) (db.User, error) {
@@ -105,4 +107,12 @@ func (r *chatRepo) SetUserWhatsmeowJID(ctx context.Context, userID uuid.UUID, ji
 
 func (r *chatRepo) ListPairedUsers(ctx context.Context) ([]db.User, error) {
 	return r.q.ListPairedUsers(ctx)
+}
+
+func (r *chatRepo) SetUserActive(ctx context.Context, userID uuid.UUID, active bool) error {
+	return r.q.SetUserActive(ctx, db.SetUserActiveParams{ID: userID, IsActive: active})
+}
+
+func (r *chatRepo) SetUserAdmin(ctx context.Context, userID uuid.UUID, isAdmin bool) error {
+	return r.q.SetUserAdmin(ctx, db.SetUserAdminParams{ID: userID, IsAdmin: isAdmin})
 }

@@ -5,12 +5,22 @@ import LoginScreen from './pages/LoginScreen'
 import ConnectScreen from './pages/ConnectScreen'
 import BroadcastScreen from './pages/BroadcastScreen'
 import { ToastProvider } from './components/ToastProvider'
-import { getToken } from './lib/api'
+import { getToken, isAdmin } from './lib/api'
 import './App.css'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   if (!getToken()) {
     return <Navigate to="/login" replace />
+  }
+  return <>{children}</>
+}
+
+function RequireAdmin({ children }: { children: ReactNode }) {
+  if (!getToken()) {
+    return <Navigate to="/login" replace />
+  }
+  if (!isAdmin()) {
+    return <Navigate to="/" replace />
   }
   return <>{children}</>
 }
@@ -55,11 +65,11 @@ function AnimatedRoutes() {
         <Route
           path="/broadcast"
           element={
-            <RequireAuth>
+            <RequireAdmin>
               <Page>
                 <BroadcastScreen />
               </Page>
-            </RequireAuth>
+            </RequireAdmin>
           }
         />
       </Routes>

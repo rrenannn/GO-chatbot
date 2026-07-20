@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
 import { useToast } from '../components/ToastProvider'
-import { apiUrl, setToken } from '../lib/api'
+import { apiUrl, setSession } from '../lib/api'
 import '../App.css'
 
 export default function LoginScreen() {
@@ -30,7 +30,7 @@ export default function LoginScreen() {
         return
       }
 
-      setToken(data.token)
+      setSession(data.token, !!data.is_admin)
       navigate('/')
     } catch {
       toast('Erro ao conectar com a API.', 'error')
